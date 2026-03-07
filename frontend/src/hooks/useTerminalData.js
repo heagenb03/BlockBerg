@@ -59,6 +59,13 @@ export function useTerminalData() {
       } catch {}
     }, POLL_INTERVAL)
 
+    const escrowInterval = setInterval(async () => {
+      try {
+        const res = await axios.get('/api/xrpl/escrow')
+        setEscrow(res.data)
+      } catch {}
+    }, 15000)
+
     // WebSocket for live XRPL events
     const connectWs = () => {
       if (!mountedRef.current) return
@@ -94,6 +101,7 @@ export function useTerminalData() {
     return () => {
       mountedRef.current = false
       clearInterval(anomalyInterval)
+      clearInterval(escrowInterval)
       clearTimeout(reconnectTimer.current)
       const ws = wsRef.current
       wsRef.current = null
