@@ -31,7 +31,7 @@ function getStatusStyle(status) {
   }
 }
 
-export function EscrowPanel({ selectedTicker, escrow }) {
+export function EscrowPanel({ selectedTicker, escrow, onTickerChange }) {
   const [localTicker, setLocalTicker] = useState(selectedTicker)
 
   useEffect(() => {
@@ -46,6 +46,7 @@ export function EscrowPanel({ selectedTicker, escrow }) {
     const parts = cmd.split(/\s+/)
     if (parts[0] === 'GO' && parts[1]) {
       setLocalTicker(parts[1])
+      onTickerChange?.(parts[1])
       return `VIEWING ${parts[1]}`
     }
     return `UNKNOWN CMD: ${parts[0]}`

@@ -13,7 +13,7 @@ function getTypeColor(type) {
   }
 }
 
-export function EventStream({ selectedTicker, events, wsConnected }) {
+export function EventStream({ selectedTicker, events, wsConnected, onTickerChange }) {
   const [localTicker, setLocalTicker] = useState(selectedTicker)
 
   useEffect(() => {
@@ -27,6 +27,7 @@ export function EventStream({ selectedTicker, events, wsConnected }) {
     const parts = cmd.split(/\s+/)
     if (parts[0] === 'GO' && parts[1]) {
       setLocalTicker(parts[1])
+      onTickerChange?.(parts[1])
       return `VIEWING ${parts[1]}`
     }
     return `UNKNOWN CMD: ${parts[0]}`

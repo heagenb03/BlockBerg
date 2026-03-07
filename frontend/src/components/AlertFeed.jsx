@@ -20,7 +20,7 @@ function formatTime(ts) {
   }
 }
 
-export function AlertFeed({ anomalies, selectedTicker }) {
+export function AlertFeed({ anomalies, selectedTicker, onTickerChange }) {
   const [localTicker, setLocalTicker] = useState(selectedTicker ?? LIVE_TICKER)
 
   useEffect(() => {
@@ -35,6 +35,7 @@ export function AlertFeed({ anomalies, selectedTicker }) {
     const parts = cmd.split(/\s+/)
     if (parts[0] === 'GO' && parts[1]) {
       setLocalTicker(parts[1])
+      onTickerChange?.(parts[1])
       return `VIEWING ${parts[1]}`
     }
     return `UNKNOWN CMD: ${parts[0]}`
