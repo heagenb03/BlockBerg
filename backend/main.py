@@ -51,10 +51,25 @@ app = FastAPI(title="MMF Terminal API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5174", "http://localhost:5173"],
     allow_methods=["GET"],
     allow_headers=["*"],
 )
+
+
+# ---------------------------------------------------------------------------
+# Fund watchlist route
+# ---------------------------------------------------------------------------
+
+@app.get("/api/funds")
+def fund_list() -> list:
+    """Watchlist of real MMFs + MMFXX synthetic fund for the FundCard panel."""
+    try:
+        from data_fetcher import get_fund_list
+        return get_fund_list()
+    except Exception as exc:
+        logger.exception("Error fetching fund list")
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
