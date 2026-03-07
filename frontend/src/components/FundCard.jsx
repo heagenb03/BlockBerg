@@ -1,11 +1,13 @@
 import React, { useState } from 'react'
 import { mockFunds } from '../lib/mockData.js'
 
-export function FundCard({ selectedTicker, onSelectTicker }) {
+export function FundCard({ funds, selectedTicker, onSelectTicker }) {
   const [sortCol, setSortCol] = useState('tvl')
   const [sortDir, setSortDir] = useState('desc')
 
-  const sorted = [...mockFunds].sort((a, b) => {
+  const fundList = funds && funds.length > 0 ? funds : mockFunds
+
+  const sorted = [...fundList].sort((a, b) => {
     const av = a[sortCol], bv = b[sortCol]
     if (av < bv) return sortDir === 'asc' ? -1 : 1
     if (av > bv) return sortDir === 'asc' ? 1 : -1
