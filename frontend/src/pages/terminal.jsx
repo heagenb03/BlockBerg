@@ -24,12 +24,18 @@ const STORAGE_KEY = 'mmf-terminal-slots'
 function loadSlots() {
   try {
     const saved = localStorage.getItem(STORAGE_KEY)
-    if (saved) return JSON.parse(saved)
+    if (saved) {
+      const slots = JSON.parse(saved)
+      // Migrate RISK slots that predate multi-ticker support
+      return slots.map((s) =>
+        s.type === 'RISK' && !s.tickers ? { ...s, tickers: [s.ticker] } : s
+      )
+    }
   } catch {}
   return DEFAULT_DYNAMIC_SLOTS
 }
 
-function SlotContent({ slot, data, onTickerChange }) {
+function SlotContent({ slot, data, onTickerChange, onTickersChange }) {
   const { escrow, anomalies, events, wsConnected, riskScores } = data
   switch (slot.type) {
     case 'ESCROW':
@@ -39,7 +45,13 @@ function SlotContent({ slot, data, onTickerChange }) {
     case 'EVENTS':
       return <EventStream selectedTicker={slot.ticker} events={events} wsConnected={wsConnected} onTickerChange={onTickerChange} />
     case 'RISK':
-      return <RiskGauge selectedTicker={slot.ticker} riskScores={riskScores} onTickerChange={onTickerChange} />
+      return (
+        <RiskGauge
+          tickers={slot.tickers ?? [slot.ticker]}
+          riskScores={riskScores}
+          onTickersChange={onTickersChange}
+        />
+      )
     default:
       return null
   }
@@ -75,11 +87,34 @@ export default function Terminal() {
       if (dynamicSlots.length >= MAX_DYNAMIC_SLOTS) {
         return { msg: 'MAX 4 PANELS — DEL ONE FIRST', ok: false }
       }
-      setDynamicSlots(prev => [...prev, { id: makeSlotId(), type, ticker }])
+      const newSlot =
+        type === 'RISK'
+          ? { id: makeSlotId(), type, ticker, tickers: [ticker] }
+          : { id: makeSlotId(), type, ticker }
+      setDynamicSlots(prev => [...prev, newSlot])
       return { msg: `${label} [${ticker}] ADDED`, ok: true }
     }
 
     if (action === 'DEL') {
+      if (type === 'RISK') {
+        const idx = dynamicSlots.findIndex(
+          (s) => s.type === 'RISK' && (s.tickers ?? [s.ticker]).includes(ticker)
+        )
+        if (idx === -1) return { msg: `${label} [${ticker}] NOT FOUND`, ok: false }
+        const slotTickers = dynamicSlots[idx].tickers ?? [dynamicSlots[idx].ticker]
+        if (slotTickers.length > 1) {
+          const newTickers = slotTickers.filter((t) => t !== ticker)
+          setDynamicSlots(prev =>
+            prev.map((s, i) =>
+              i === idx ? { ...s, tickers: newTickers, ticker: newTickers[0] } : s
+            )
+          )
+          return { msg: `${label} [${ticker}] REMOVED FROM PANEL`, ok: true }
+        }
+        setDynamicSlots(prev => prev.filter((_, i) => i !== idx))
+        return { msg: `${label} [${ticker}] REMOVED`, ok: true }
+      }
+
       const idx = dynamicSlots.findIndex(s => s.type === type && s.ticker === ticker)
       if (idx === -1) {
         return { msg: `${label} [${ticker}] NOT FOUND`, ok: false }
@@ -110,6 +145,14 @@ export default function Terminal() {
 
   const handleSlotTickerChange = (slotId, newTicker) => {
     setDynamicSlots(prev => prev.map(s => s.id === slotId ? { ...s, ticker: newTicker } : s))
+  }
+
+  const handleSlotTickersChange = (slotId, newTickers) => {
+    setDynamicSlots(prev =>
+      prev.map(s =>
+        s.id === slotId ? { ...s, tickers: newTickers, ticker: newTickers[0] } : s
+      )
+    )
   }
 
   const panelData = { escrow, anomalies, events, wsConnected, riskScores }
@@ -151,7 +194,12 @@ export default function Terminal() {
                 <>
                   <ResizeHandle />
                   <Panel defaultSize={topSizes[2]} minSize={15}>
-                    <SlotContent slot={slot0} data={panelData} onTickerChange={(t) => handleSlotTickerChange(slot0.id, t)} />
+                    <SlotContent
+                      slot={slot0}
+                      data={panelData}
+                      onTickerChange={(t) => handleSlotTickerChange(slot0.id, t)}
+                      onTickersChange={(ts) => handleSlotTickersChange(slot0.id, ts)}
+                    />
                   </Panel>
                 </>
               )}
@@ -169,7 +217,12 @@ export default function Terminal() {
                     <React.Fragment key={slot.id}>
                       {idx > 0 && <ResizeHandle />}
                       <Panel defaultSize={bottomSizes[idx]} minSize={15}>
-                        <SlotContent slot={slot} data={panelData} onTickerChange={(t) => handleSlotTickerChange(slot.id, t)} />
+                        <SlotContent
+                          slot={slot}
+                          data={panelData}
+                          onTickerChange={(t) => handleSlotTickerChange(slot.id, t)}
+                          onTickersChange={(ts) => handleSlotTickersChange(slot.id, ts)}
+                        />
                       </Panel>
                     </React.Fragment>
                   ))}

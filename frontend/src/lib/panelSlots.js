@@ -22,7 +22,7 @@ export const DEFAULT_DYNAMIC_SLOTS = [
   { id: 'default-0', type: 'ESCROW', ticker: 'MMFXX' },
   { id: 'default-1', type: 'ALERT',  ticker: 'MMFXX' },
   { id: 'default-2', type: 'EVENTS', ticker: 'MMFXX' },
-  { id: 'default-3', type: 'RISK',   ticker: 'MMFXX' },
+  { id: 'default-3', type: 'RISK',   ticker: 'MMFXX', tickers: ['MMFXX'] },
 ]
 
 let _idSeq = 0
