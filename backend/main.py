@@ -40,21 +40,26 @@ async def lifespan(app: FastAPI):
 
     logger.info("Initializing XRPL connection and state...")
     stream_task = None
+    settler_task = None
     try:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, xrpl_client.initialize)
         # Start live WebSocket stream as background task (after wallet is ready)
         stream_task = asyncio.create_task(xrpl_client.run_xrpl_stream())
         logger.info("XRPL event stream task started.")
+        # Start escrow settler — finishes matured escrows every 60s
+        settler_task = asyncio.create_task(xrpl_client.run_escrow_settler())
+        logger.info("Escrow settler task started.")
     except Exception:
         logger.exception("XRPL initialization failed — XRPL endpoints will return 503.")
     yield
-    if stream_task:
-        stream_task.cancel()
-        try:
-            await stream_task
-        except asyncio.CancelledError:
-            pass
+    for task in (stream_task, settler_task):
+        if task:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(title="MMF Terminal API", lifespan=lifespan)
