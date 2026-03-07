@@ -16,6 +16,20 @@ function formatAmount(n) {
   return n.toLocaleString()
 }
 
+function formatSettledAt(iso) {
+  if (!iso) return '—'
+  try {
+    const d = new Date(iso)
+    const mo = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const day = String(d.getUTCDate()).padStart(2, '0')
+    const hh = String(d.getUTCHours()).padStart(2, '0')
+    const mm = String(d.getUTCMinutes()).padStart(2, '0')
+    return `${mo}/${day} ${hh}:${mm}`
+  } catch {
+    return '—'
+  }
+}
+
 function formatFinishAfter(ts) {
   try {
     const d = new Date(ts)
@@ -83,10 +97,11 @@ export function EscrowPanel({ selectedTicker, escrow, onTickerChange }) {
           </div>
 
           <div className="flex text-[10px] font-mono text-[#9AA4B2] uppercase px-2 py-1 bg-[#11161D] border-b border-[#1E2530]">
-            <div className="w-[28%]">ID</div>
-            <div className="w-[28%] text-right">Amount</div>
-            <div className="w-[26%] text-right">Settle</div>
-            <div className="w-[18%] text-right">Status</div>
+            <div className="w-[22%]">ID</div>
+            <div className="w-[20%] text-right">Amount</div>
+            <div className="w-[18%] text-right">Settle</div>
+            <div className="w-[24%] text-right">Settled At</div>
+            <div className="w-[16%] text-right">Status</div>
           </div>
 
           <div className="flex-1 overflow-y-auto scrollbar-hide divide-y divide-[#1E2530]/30 font-mono text-[11px]">
@@ -95,12 +110,15 @@ export function EscrowPanel({ selectedTicker, escrow, onTickerChange }) {
                 key={pos.escrow_id}
                 className={`flex items-center px-2 py-1.5 hover:bg-[#1E2530] transition-colors cursor-pointer ${i % 2 === 0 ? '' : 'bg-[#11161D]/20'}`}
               >
-                <div className="w-[28%] text-[#E6EDF3]">{formatEscrowId(pos.escrow_id)}</div>
-                <div className="w-[28%] text-right text-[#FFFFFF]">{formatAmount(pos.amount)}</div>
-                <div className="w-[26%] text-right text-[#9AA4B2]">
+                <div className="w-[22%] text-[#E6EDF3]">{formatEscrowId(pos.escrow_id)}</div>
+                <div className="w-[20%] text-right text-[#FFFFFF]">{formatAmount(pos.amount)}</div>
+                <div className="w-[18%] text-right text-[#9AA4B2]">
                   {pos.status === 'settled' ? 'SETTLED' : formatFinishAfter(pos.finish_after)}
                 </div>
-                <div className={`w-[18%] text-right font-bold uppercase text-[9px] ${getStatusStyle(pos.status)}`}>
+                <div className="w-[24%] text-right text-[#9AA4B2]">
+                  {formatSettledAt(pos.settled_at)}
+                </div>
+                <div className={`w-[16%] text-right font-bold uppercase text-[9px] ${getStatusStyle(pos.status)}`}>
                   {pos.status}
                 </div>
               </div>
