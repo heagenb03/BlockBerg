@@ -1,13 +1,15 @@
 import React, { useState } from 'react'
 import { mockFunds } from '../lib/mockData.js'
+import { PanelCommandLine } from './PanelCommandLine.jsx'
 
 export function FundCard({ funds, selectedTicker, onSelectTicker }) {
   const [sortCol, setSortCol] = useState('tvl')
   const [sortDir, setSortDir] = useState('desc')
 
-  const fundList = funds && funds.length > 0 ? funds : mockFunds
+  const allFunds = funds && funds.length > 0 ? funds : mockFunds
+  const [watchlist, setWatchlist] = useState(allFunds)
 
-  const sorted = [...fundList].sort((a, b) => {
+  const sorted = [...watchlist].sort((a, b) => {
     const av = a[sortCol], bv = b[sortCol]
     if (av < bv) return sortDir === 'asc' ? -1 : 1
     if (av > bv) return sortDir === 'asc' ? 1 : -1
@@ -23,6 +25,30 @@ export function FundCard({ funds, selectedTicker, onSelectTicker }) {
     }
   }
 
+  const handleCommand = (cmd) => {
+    const parts = cmd.split(/\s+/)
+    const op = parts[0]
+    const ticker = parts[1]
+
+    if (!ticker) return 'USAGE: ADD <TICKER> or DEL <TICKER>'
+
+    if (op === 'ADD') {
+      if (watchlist.some((f) => f.ticker === ticker)) return `${ticker} ALREADY IN MONITOR`
+      const known = allFunds.find((f) => f.ticker === ticker)
+      const entry = known ?? { ticker, name: 'UNKNOWN FUND', tvl: 0, yld: 0, chg: 0, vol: 0 }
+      setWatchlist((prev) => [...prev, entry])
+      return `ADDED ${ticker}`
+    }
+
+    if (op === 'DEL') {
+      if (!watchlist.some((f) => f.ticker === ticker)) return `${ticker} NOT FOUND`
+      setWatchlist((prev) => prev.filter((f) => f.ticker !== ticker))
+      return `REMOVED ${ticker}`
+    }
+
+    return `UNKNOWN CMD: ${op}`
+  }
+
   const SortIndicator = ({ col }) =>
     sortCol === col ? (
       <span className="text-[#FFC107]">{sortDir === 'asc' ? ' ▲' : ' ▼'}</span>
@@ -30,10 +56,14 @@ export function FundCard({ funds, selectedTicker, onSelectTicker }) {
 
   return (
     <div className="bg-[#0B0F14] border border-[#1E2530] h-full flex flex-col font-sans">
-      <div className="flex items-center justify-between p-1.5 border-b border-[#1E2530] bg-[#11161D]">
-        <h2 className="text-[#FFFFFF] font-semibold text-[11px] tracking-wider uppercase flex items-center gap-2">
-          MONITOR <span className="text-[#9AA4B2] font-mono">&lt;GO&gt;</span>
-        </h2>
+      <div className="border-b border-[#1E2530] bg-[#11161D] flex flex-col">
+        <div className="flex items-center justify-between p-1.5">
+          <h2 className="text-[#FFFFFF] font-semibold text-[11px] tracking-wider uppercase">
+            MONITOR
+          </h2>
+          <span className="text-[9px] font-mono text-[#9AA4B2]">ADD · DEL</span>
+        </div>
+        <PanelCommandLine onCommand={handleCommand} placeholder="ADD WTGXX  or  DEL BUIDL" />
       </div>
 
       <div className="flex-1 overflow-auto scrollbar-hide">
@@ -68,26 +98,25 @@ export function FundCard({ funds, selectedTicker, onSelectTicker }) {
           </thead>
           <tbody className="font-mono text-[11px]">
             {sorted.map((fund) => {
-              const isSelected = selectedTicker === fund.ticker
+              const isNull = fund.yld === 0 && fund.tvl === 0
               const isPos = fund.chg >= 0
               return (
                 <tr
                   key={fund.ticker}
-                  className={`cursor-pointer border-b border-[#1E2530]/30 hover:bg-[#1E2530] transition-colors ${isSelected ? 'bg-[#FFFFFF]/10' : ''}`}
+                  className="cursor-pointer border-b border-[#1E2530]/30 hover:bg-[#1E2530] transition-colors"
                   onClick={() => onSelectTicker(fund.ticker)}
                 >
-                  <td className={`py-1.5 px-2 font-bold ${isSelected ? 'text-[#FFFFFF]' : 'text-[#E6EDF3]'}`}>
+                  <td className={`py-1.5 px-2 font-bold ${isNull ? 'text-[#9AA4B2]' : 'text-[#E6EDF3]'}`}>
                     {fund.ticker}
-                    {isSelected && <span className="ml-1 text-[#FFC107]">◀</span>}
                   </td>
                   <td className="py-1.5 px-2 text-right text-[#E6EDF3]">
-                    {fund.yld.toFixed(2)}
+                    {isNull ? '--' : fund.yld.toFixed(2)}
                   </td>
-                  <td className={`py-1.5 px-2 text-right ${isPos ? 'text-[#00C853]' : 'text-[#FF5252]'}`}>
-                    {isPos ? '+' : ''}{fund.chg.toFixed(2)}
+                  <td className={`py-1.5 px-2 text-right ${isNull ? 'text-[#9AA4B2]' : isPos ? 'text-[#00C853]' : 'text-[#FF5252]'}`}>
+                    {isNull ? '--' : `${isPos ? '+' : ''}${fund.chg.toFixed(2)}`}
                   </td>
                   <td className="py-1.5 px-2 text-right text-[#E6EDF3]">
-                    {fund.tvl.toFixed(1)}
+                    {isNull ? '--' : fund.tvl.toFixed(1)}
                   </td>
                 </tr>
               )
