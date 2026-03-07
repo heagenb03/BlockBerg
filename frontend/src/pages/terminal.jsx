@@ -29,17 +29,17 @@ function loadSlots() {
   return DEFAULT_DYNAMIC_SLOTS
 }
 
-function SlotContent({ slot, data }) {
+function SlotContent({ slot, data, onTickerChange }) {
   const { escrow, anomalies, events, wsConnected, riskScores } = data
   switch (slot.type) {
     case 'ESCROW':
-      return <EscrowPanel selectedTicker={slot.ticker} escrow={escrow} />
+      return <EscrowPanel selectedTicker={slot.ticker} escrow={escrow} onTickerChange={onTickerChange} />
     case 'ALERT':
-      return <AlertFeed selectedTicker={slot.ticker} anomalies={anomalies} />
+      return <AlertFeed selectedTicker={slot.ticker} anomalies={anomalies} onTickerChange={onTickerChange} />
     case 'EVENTS':
-      return <EventStream selectedTicker={slot.ticker} events={events} wsConnected={wsConnected} />
+      return <EventStream selectedTicker={slot.ticker} events={events} wsConnected={wsConnected} onTickerChange={onTickerChange} />
     case 'RISK':
-      return <RiskGauge selectedTicker={slot.ticker} riskScores={riskScores} />
+      return <RiskGauge selectedTicker={slot.ticker} riskScores={riskScores} onTickerChange={onTickerChange} />
     default:
       return null
   }
@@ -108,6 +108,10 @@ export default function Terminal() {
   const bottomKey = `bottom-${bottomSlots.map(s => s.id).join('-')}`
   const vertKey = `vert-${hasBottom}`
 
+  const handleSlotTickerChange = (slotId, newTicker) => {
+    setDynamicSlots(prev => prev.map(s => s.id === slotId ? { ...s, ticker: newTicker } : s))
+  }
+
   const panelData = { escrow, anomalies, events, wsConnected, riskScores }
 
   return (
@@ -147,7 +151,7 @@ export default function Terminal() {
                 <>
                   <ResizeHandle />
                   <Panel defaultSize={topSizes[2]} minSize={15}>
-                    <SlotContent slot={slot0} data={panelData} />
+                    <SlotContent slot={slot0} data={panelData} onTickerChange={(t) => handleSlotTickerChange(slot0.id, t)} />
                   </Panel>
                 </>
               )}
@@ -165,7 +169,7 @@ export default function Terminal() {
                     <React.Fragment key={slot.id}>
                       {idx > 0 && <ResizeHandle />}
                       <Panel defaultSize={bottomSizes[idx]} minSize={15}>
-                        <SlotContent slot={slot} data={panelData} />
+                        <SlotContent slot={slot} data={panelData} onTickerChange={(t) => handleSlotTickerChange(slot.id, t)} />
                       </Panel>
                     </React.Fragment>
                   ))}
