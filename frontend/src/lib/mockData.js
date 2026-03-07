@@ -1,12 +1,10 @@
 export const mockFunds = [
-  { ticker: 'MMFXX', tvl: 42.5, yld: 4.95, chg: 0.12, vol: 1.2, name: 'Main Money Market Fund' },
-  { ticker: 'XMTD',  tvl: 18.2, yld: 4.10, chg: -0.05, vol: 0.45, name: 'Treasury Note Token' },
-  { ticker: 'USTY',  tvl: 105.8, yld: 5.05, chg: 0.22, vol: 8.5, name: 'US Gov Yield TKN' },
-  { ticker: 'CORP',  tvl: 8.4,  yld: 5.80, chg: 0.45, vol: 0.12, name: 'Corporate Grade A' },
-  { ticker: 'RPLZ',  tvl: 2.1,  yld: 3.50, chg: -0.15, vol: 0.8, name: 'Ripple Repo Reserve' },
-  { ticker: 'GOVX',  tvl: 54.3, yld: 4.65, chg: 0.08, vol: 3.2, name: 'Govx Multi-Strategy' },
-  { ticker: 'FEDF',  tvl: 32.1, yld: 5.25, chg: 0.31, vol: 2.1, name: 'Federal Fund Proxy' },
-  { ticker: 'MUNY',  tvl: 9.8,  yld: 3.80, chg: 0.02, vol: 0.05, name: 'Muni Equivalent' },
+  { ticker: 'MMFXX', name: 'Simulated Treasury Money Market Fund',                     tvl: 10.0,    yld: 4.85, chg:  0.00, vol: 0.20 },
+  { ticker: 'BUIDL', name: 'BlackRock USD Institutional Digital Liquidity Fund',        tvl: 2191.4,  yld: 3.47, chg:  0.01, vol: 43.8 },
+  { ticker: 'USYC',  name: 'Circle USYC',                                               tvl: 1854.6,  yld: 3.14, chg: -0.02, vol: 37.1 },
+  { ticker: 'USDY',  name: 'Ondo U.S. Dollar Yield',                                   tvl: 1285.7,  yld: 5.05, chg:  0.03, vol: 25.7 },
+  { ticker: 'BENJI', name: 'Franklin OnChain U.S. Government Money Fund',               tvl: 1028.4,  yld: 3.03, chg:  0.01, vol: 20.6 },
+  { ticker: 'WTGXX', name: 'WisdomTree Government Money Market Digital Fund',           tvl: 777.6,   yld: 3.49, chg:  0.00, vol: 15.6 },
 ]
 
 export const mockFund = {
