@@ -1,3 +1,26 @@
 #DOCS
 CLAUDE.md
-docs/
+
+# XRPL wallet seeds and on-chain state — contains private keys, never commit
+backend/state.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.env
+.env.local
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+
+# Data files (may be large or contain PII)
+data/raw/
+data/processed/
+
+# OS
+.DS_Store
+Thumbs.db
