@@ -59,11 +59,13 @@ export const mockRiskScores = [
 ]
 
 export const mockEscrow = [
-  { escrow_id: 'ESC-001', subscriber: 'rPjU...9Kx', amount: 1_200_000, finish_after: '2026-03-07T10:00:00Z', status: 'pending' },
-  { escrow_id: 'ESC-002', subscriber: 'rQZc...5Wt', amount:   500_000, finish_after: '2026-03-07T14:00:00Z', status: 'pending' },
-  { escrow_id: 'ESC-003', subscriber: 'rUa2...bNq', amount:   100_000, finish_after: '2026-03-07T10:00:00Z', status: 'pending' },
-  { escrow_id: 'ESC-004', subscriber: 'rLb9...3Po', amount:    50_000, finish_after: '2026-03-06T22:00:00Z', status: 'maturing' },
-  { escrow_id: 'ESC-005', subscriber: 'rHx8...2Xl', amount:   250_000, finish_after: '2026-03-08T10:00:00Z', status: 'pending' },
+  { escrow_id: 'ESC-001', subscriber: 'rPjU...9Kx', amount: 100_000, finish_after: '2026-03-07T10:00:00Z', status: 'maturing',  settled_at: null },
+  { escrow_id: 'ESC-002', subscriber: 'rPjU...9Kx', amount: 100_000, finish_after: '2026-03-07T09:55:00Z', status: 'settled',   settled_at: '2026-03-07T09:55:42Z' },
+  { escrow_id: 'ESC-003', subscriber: 'rPjU...9Kx', amount: 100_000, finish_after: '2026-03-07T09:50:00Z', status: 'settled',   settled_at: '2026-03-07T09:50:38Z' },
+  { escrow_id: 'ESC-004', subscriber: 'rQZc...5Wt', amount: 500_000, finish_after: '2026-03-07T14:00:00Z', status: 'maturing',  settled_at: null },
+  { escrow_id: 'ESC-005', subscriber: 'rUa2...bNq', amount: 250_000, finish_after: '2026-03-07T18:00:00Z', status: 'maturing',  settled_at: null },
+  { escrow_id: 'ESC-006', subscriber: 'rLb9...3Po', amount: 1_000_000, finish_after: '2026-03-08T00:00:00Z', status: 'maturing', settled_at: null },
+  { escrow_id: 'ESC-007', subscriber: 'rHx8...2Xl', amount: 750_000, finish_after: '2026-03-08T10:00:00Z', status: 'maturing',  settled_at: null },
 ]
 
 export const mockEvents = [
