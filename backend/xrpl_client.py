@@ -294,7 +294,7 @@ def get_fund_data() -> dict[str, Any]:
 
     return {
         "mpt_issuance_id": _mpt_issuance_id,
-        "supply": str(INITIAL_SUPPLY),
+        "supply": INITIAL_SUPPLY,
         "nav": NAV_PER_TOKEN,
         "yield_7d": SIMULATED_YIELD_7D,
         "tvl_usd": INITIAL_SUPPLY * NAV_PER_TOKEN,
