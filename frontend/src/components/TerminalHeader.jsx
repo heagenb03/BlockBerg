@@ -35,7 +35,7 @@ export function TerminalHeader({ alertCount = 0, onPanelCommand }) {
       {/* Left — brand */}
       <div className="flex items-center space-x-2 shrink-0">
         <Activity className="w-4 h-4 text-[#FFFFFF]" />
-        <h1 className="text-sm font-bold tracking-widest text-[#FFFFFF] uppercase">MMFBlerg</h1>
+        <h1 className="text-sm font-bold tracking-widest text-[#FFFFFF] uppercase">BlockBlerg</h1>
       </div>
 
       {/* Center — panel command input */}
