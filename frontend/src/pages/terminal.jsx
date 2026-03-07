@@ -12,7 +12,7 @@ import { useTerminalData } from '../hooks/useTerminalData.js'
 
 export default function Terminal() {
   const [selectedTicker, setSelectedTicker] = useState('MMFXX')
-  const { funds, yieldForecast, anomalies, riskScores, escrow, events, loading, error } = useTerminalData()
+  const { funds, yieldForecast, anomalies, riskScores, escrow, events, wsConnected, loading, error } = useTerminalData()
 
   const criticalCount = anomalies.filter((a) => a.severity === 'Critical').length
 
@@ -46,13 +46,13 @@ export default function Terminal() {
               <ResizeHandle />
 
               <Panel defaultSize={50} minSize={30}>
-                <YieldChart selectedTicker={selectedTicker} yieldForecast={yieldForecast} />
+                <YieldChart selectedTicker="MMFXX" yieldForecast={yieldForecast} />
               </Panel>
 
               <ResizeHandle />
 
               <Panel defaultSize={25} minSize={15}>
-                <EscrowPanel selectedTicker={selectedTicker} escrow={escrow} />
+                <EscrowPanel selectedTicker="MMFXX" escrow={escrow} />
               </Panel>
 
             </PanelGroup>
@@ -71,13 +71,13 @@ export default function Terminal() {
               <ResizeHandle />
 
               <Panel defaultSize={50} minSize={30}>
-                <EventStream selectedTicker={selectedTicker} events={events} />
+                <EventStream selectedTicker="MMFXX" events={events} wsConnected={wsConnected} />
               </Panel>
 
               <ResizeHandle />
 
               <Panel defaultSize={25} minSize={15}>
-                <RiskGauge selectedTicker={selectedTicker} riskScores={riskScores} />
+                <RiskGauge selectedTicker="MMFXX" riskScores={riskScores} />
               </Panel>
 
             </PanelGroup>

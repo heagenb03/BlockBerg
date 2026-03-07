@@ -11,7 +11,7 @@ function getTypeColor(type) {
   }
 }
 
-export function EventStream({ selectedTicker, events }) {
+export function EventStream({ selectedTicker, events, wsConnected }) {
   const stream = events?.length ? events : mockEvents
 
   return (
@@ -23,6 +23,12 @@ export function EventStream({ selectedTicker, events }) {
         <div className="flex items-center gap-2">
           <span className="text-[10px] text-[#9AA4B2] uppercase font-mono border border-[#1E2530] px-1 bg-[#000000]">
             FILTER: {selectedTicker}
+          </span>
+          <span className="flex items-center gap-1 text-[10px] font-mono">
+            <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-[#00C853] animate-pulse' : 'bg-[#FF5252]'}`} />
+            <span className={wsConnected ? 'text-[#00C853]' : 'text-[#FF5252]'}>
+              {wsConnected ? 'LIVE' : 'OFFLINE'}
+            </span>
           </span>
           <button className="text-[#9AA4B2] hover:text-[#E6EDF3] transition-colors p-0.5">
             <RefreshCw className="w-3 h-3" />
