@@ -5,6 +5,13 @@ import { PanelCommandLine } from './PanelCommandLine.jsx'
 
 const LIVE_TICKER = 'MMFXX'
 
+function formatEscrowId(id) {
+  // "rABCDEFG...XYZ:12345" → "...XYZ:12345"
+  const [addr, seq] = id.split(':')
+  if (!addr || !seq) return id
+  return `…${addr.slice(-6)}:${seq}`
+}
+
 function formatAmount(n) {
   return n.toLocaleString()
 }
@@ -27,6 +34,7 @@ function getStatusStyle(status) {
   switch (status) {
     case 'maturing': return 'text-[#FFC107]'
     case 'finished': return 'text-[#00C853]'
+    case 'settled':  return 'text-[#42A5F5]'
     default:         return 'text-[#9AA4B2]'
   }
 }
@@ -87,9 +95,11 @@ export function EscrowPanel({ selectedTicker, escrow, onTickerChange }) {
                 key={pos.escrow_id}
                 className={`flex items-center px-2 py-1.5 hover:bg-[#1E2530] transition-colors cursor-pointer ${i % 2 === 0 ? '' : 'bg-[#11161D]/20'}`}
               >
-                <div className="w-[28%] text-[#E6EDF3]">{pos.escrow_id}</div>
+                <div className="w-[28%] text-[#E6EDF3]">{formatEscrowId(pos.escrow_id)}</div>
                 <div className="w-[28%] text-right text-[#FFFFFF]">{formatAmount(pos.amount)}</div>
-                <div className="w-[26%] text-right text-[#9AA4B2]">{formatFinishAfter(pos.finish_after)}</div>
+                <div className="w-[26%] text-right text-[#9AA4B2]">
+                  {pos.status === 'settled' ? 'SETTLED' : formatFinishAfter(pos.finish_after)}
+                </div>
                 <div className={`w-[18%] text-right font-bold uppercase text-[9px] ${getStatusStyle(pos.status)}`}>
                   {pos.status}
                 </div>
