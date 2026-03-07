@@ -12,7 +12,7 @@ import { useTerminalData } from '../hooks/useTerminalData.js'
 
 export default function Terminal() {
   const [selectedTicker, setSelectedTicker] = useState('MMFXX')
-  const { yieldForecast, anomalies, riskScores, escrow, events, loading, error } = useTerminalData()
+  const { funds, yieldForecast, anomalies, riskScores, escrow, events, loading, error } = useTerminalData()
 
   const criticalCount = anomalies.filter((a) => a.severity === 'Critical').length
 
@@ -40,7 +40,7 @@ export default function Terminal() {
             <PanelGroup direction="horizontal" className="h-full" style={{ gap: '4px' }}>
 
               <Panel defaultSize={25} minSize={15}>
-                <FundCard selectedTicker={selectedTicker} onSelectTicker={setSelectedTicker} />
+                <FundCard funds={funds} selectedTicker={selectedTicker} onSelectTicker={setSelectedTicker} />
               </Panel>
 
               <ResizeHandle />
