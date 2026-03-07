@@ -11,14 +11,17 @@ Delete state.json to start fresh (re-issues everything).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
+from xrpl.asyncio.clients import AsyncWebsocketClient
 from xrpl.clients import JsonRpcClient
-from xrpl.models.requests import AccountTx
+from xrpl.models.requests import AccountTx, Subscribe
 from xrpl.models.amounts import MPTAmount
 from xrpl.models.transactions import EscrowCreate, MPTokenAuthorize, MPTokenIssuanceCreate, Payment
 from xrpl.models.transactions.mptoken_issuance_create import MPTokenIssuanceCreateFlag
@@ -70,6 +73,10 @@ _fund_wallet: Wallet | None = None
 _subscriber_wallet: Wallet | None = None
 _mpt_issuance_id: str = ""
 _escrow_positions: list[dict] = []
+
+# WebSocket fan-out: buffer of recent events + set of per-client queues
+_event_buffer: deque[dict] = deque(maxlen=50)
+_event_subscribers: set[asyncio.Queue] = set()
 
 
 # ---------------------------------------------------------------------------
@@ -342,6 +349,67 @@ def get_events() -> list[dict[str, Any]]:
         }
         for t in txns
     ]
+
+
+def _format_ws_event(msg: dict) -> dict[str, Any]:
+    """Format a raw XRPL WebSocket transaction message into EventStream shape."""
+    tx = msg.get("transaction", {})
+    return {
+        "id": tx.get("hash", "")[:16],
+        "time": _fmt_time(tx.get("date", 0)),
+        "type": _TX_TYPE_MAP.get(tx.get("TransactionType", ""), "TRANSFER"),
+        "amount": str(tx.get("Amount", "-")),
+        "account": tx.get("Account", ""),
+    }
+
+
+async def run_xrpl_stream() -> None:
+    """Subscribe to XRPL Testnet WebSocket and push events to all browser clients.
+
+    Runs as a background asyncio task. Reconnects automatically on disconnect.
+    Events are fanned out to every connected browser WebSocket client via their
+    individual asyncio.Queue, and buffered in _event_buffer for late joiners.
+    """
+    url = "wss://s.altnet.rippletest.net:51233"
+    while True:
+        try:
+            logger.info("Connecting to XRPL WebSocket at %s", url)
+            async with AsyncWebsocketClient(url) as client:
+                await client.send(Subscribe(accounts=[_fund_wallet.classic_address]))
+                logger.info("XRPL WebSocket subscribed to %s", _fund_wallet.classic_address)
+                async for msg in client:
+                    if not isinstance(msg, dict) or msg.get("type") != "transaction":
+                        continue
+                    event = _format_ws_event(msg)
+                    _event_buffer.appendleft(event)
+                    for q in list(_event_subscribers):
+                        try:
+                            q.put_nowait(event)
+                        except asyncio.QueueFull:
+                            pass
+        except asyncio.CancelledError:
+            logger.info("XRPL WebSocket stream cancelled.")
+            raise
+        except Exception as exc:
+            logger.warning("XRPL WebSocket error: %s — reconnecting in 5s", exc)
+            await asyncio.sleep(5)
+
+
+def subscribe_events() -> asyncio.Queue:
+    """Register a new browser WebSocket client; returns its event queue."""
+    q: asyncio.Queue = asyncio.Queue(maxsize=200)
+    _event_subscribers.add(q)
+    return q
+
+
+def unsubscribe_events(q: asyncio.Queue) -> None:
+    """Remove a browser WebSocket client's queue on disconnect."""
+    _event_subscribers.discard(q)
+
+
+def get_event_buffer() -> list[dict]:
+    """Return a snapshot of recent events for new WebSocket clients."""
+    return list(_event_buffer)
 
 
 def get_escrow_positions() -> list[dict[str, Any]]:
