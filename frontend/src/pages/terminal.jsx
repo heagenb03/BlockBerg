@@ -161,19 +161,19 @@ export default function Terminal() {
     <div className="h-screen bg-[#000000] text-[#E6EDF3] font-sans flex flex-col overflow-hidden" style={{ fontFamily: 'system-ui, Arial, sans-serif' }}>
       <TerminalHeader alertCount={criticalCount} onPanelCommand={handlePanelCommand} />
 
-      {loading && (
-        <div className="flex-1 flex items-center justify-center">
-          <span className="text-[#9AA4B2] font-mono text-sm animate-pulse">CONNECTING TO XRPL TESTNET...</span>
-        </div>
-      )}
-
       {error && !loading && (
         <div className="px-4 py-1 bg-[#FF5252]/10 border-b border-[#FF5252]/30 text-[#FF5252] text-xs font-mono">
           WARN: API unreachable — displaying mock data ({error})
         </div>
       )}
 
-      <main className="flex-1 overflow-hidden p-1 gap-1">
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center">
+          <span className="text-[#9AA4B2] font-mono text-sm animate-pulse">CONNECTING TO XRPL TESTNET...</span>
+        </div>
+      ) : null}
+
+      <main className={`flex-1 overflow-hidden p-1 gap-1${loading ? ' hidden' : ''}`}>
         <PanelGroup key={vertKey} direction="vertical" className="h-full w-full" style={{ gap: '4px' }}>
 
           {/* Top row — MON + YF always present, plus dynamic slot 0 */}
