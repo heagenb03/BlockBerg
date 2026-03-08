@@ -19,7 +19,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 import xrpl_client
@@ -39,27 +39,22 @@ async def lifespan(app: FastAPI):
     import asyncio
 
     logger.info("Initializing XRPL connection and state...")
-    stream_task = None
     settler_task = None
     try:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, xrpl_client.initialize)
-        # Start live WebSocket stream as background task (after wallet is ready)
-        stream_task = asyncio.create_task(xrpl_client.run_xrpl_stream())
-        logger.info("XRPL event stream task started.")
         # Start escrow settler — finishes matured escrows every 60s
         settler_task = asyncio.create_task(xrpl_client.run_escrow_settler())
         logger.info("Escrow settler task started.")
     except Exception:
         logger.exception("XRPL initialization failed — XRPL endpoints will return 503.")
     yield
-    for task in (stream_task, settler_task):
-        if task:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
+    if settler_task:
+        settler_task.cancel()
+        try:
+            await settler_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="MMF Terminal API", lifespan=lifespan)
@@ -111,6 +106,7 @@ def events() -> list:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+
 @app.get("/api/xrpl/escrow")
 def escrow() -> list:
     """Active Token Escrow positions (T+1 settlement simulation)."""
@@ -120,28 +116,6 @@ def escrow() -> list:
         logger.exception("Error fetching escrow positions")
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
-
-@app.websocket("/ws/xrpl/events")
-async def ws_events(websocket: WebSocket):
-    """Live XRPL event stream via WebSocket.
-
-    On connect: sends the buffered event history (up to 50 events).
-    Then streams new events in real time as they arrive on the XRPL Testnet.
-    """
-    await websocket.accept()
-    # Send buffer snapshot so the client sees recent history immediately
-    for event in xrpl_client.get_event_buffer():
-        await websocket.send_json(event)
-
-    q = xrpl_client.subscribe_events()
-    try:
-        while True:
-            event = await q.get()
-            await websocket.send_json(event)
-    except WebSocketDisconnect:
-        pass
-    finally:
-        xrpl_client.unsubscribe_events(q)
 
 
 # ---------------------------------------------------------------------------
