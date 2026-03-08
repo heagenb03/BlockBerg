@@ -618,25 +618,100 @@ def _fmt_time(ripple_date: int) -> str:
     return f"{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}"
 
 
-def get_events() -> list[dict[str, Any]]:
-    """Fetch recent XRPL transactions for GET /api/xrpl/events."""
-    client = _new_client()
-    req = AccountTx(account=_fund_wallet.classic_address, limit=25)
-    resp = client.request(req)
-    txns = resp.result.get("transactions", [])
+def _extract_amount(raw: Any) -> str:
+    """Return a plain numeric string from an XRPL Amount field.
 
-    return [
-        {
-            "id": tx.get("hash", "")[:16],
-            "time": _fmt_time(tx.get("date", 0)),
-            "type": _TX_TYPE_MAP.get(tx.get("TransactionType", ""), "TRANSFER"),
-            "amount": str(tx.get("Amount", "-")),
-            "account": tx.get("Account", ""),
-        }
-        for t in txns
-        # xrpl-py 2.x / Testnet API uses tx_json; older responses use tx
-        if (tx := t.get("tx_json") or t.get("tx") or {})
-    ]
+    MPT amounts arrive as {"mpt_issuance_id": "...", "value": "123456"}.
+    XRP drops arrive as a plain string/int. Return "-" for missing/empty.
+    """
+    if isinstance(raw, dict):
+        return raw.get("value", "-")
+    val = str(raw) if raw else "-"
+    return val if val else "-"
+
+
+def _classify_event(
+    tx_type: str, account: str, destination: str, fund_addr: str, sub_addr: str
+) -> tuple[str, str]:
+    """Return (direction, display_label) for an XRPL transaction.
+
+    Directions:
+      SUB — subscription / investment in (subscriber → fund)
+      RDM — redemption / payout out (fund → subscriber)
+      CLR — settlement clearance (EscrowFinish)
+      —   — neutral / administrative
+    """
+    if tx_type == "Payment":
+        if account == fund_addr and destination == sub_addr:
+            # Fund delivers tokens to investor = subscription issuance
+            return "SUB", "SUBSCRIPTION"
+        if account == sub_addr and destination == fund_addr:
+            # Investor returns tokens to fund = redemption request
+            return "RDM", "REDEMPTION"
+        return "—", "PAYMENT"
+
+    if tx_type == "EscrowCreate":
+        if account == sub_addr:
+            return "SUB", "ESCROW_CREATE"
+        return "—", "ESCROW_CREATE"
+
+    if tx_type == "EscrowFinish":
+        return "CLR", "ESCROW_FINISH"
+
+    return "—", _TX_TYPE_MAP.get(tx_type, "TRANSFER")
+
+
+def get_events() -> list[dict[str, Any]]:
+    """Fetch recent XRPL transactions for GET /api/xrpl/events.
+
+    Queries both fund and subscriber wallets, deduplicates by hash, sorts
+    newest-first, and annotates each event with a ``direction`` field so the
+    frontend can distinguish subscriptions (SUB), redemptions (RDM), and
+    settlement clearances (CLR).
+    """
+    if _fund_wallet is None or _subscriber_wallet is None:
+        return []
+
+    fund_addr = _fund_wallet.classic_address
+    sub_addr = _subscriber_wallet.classic_address
+    client = _new_client()
+
+    # Collect unique transactions from both wallets keyed by hash
+    seen: dict[str, dict] = {}
+    for account in (fund_addr, sub_addr):
+        req = AccountTx(account=account, limit=25)
+        try:
+            resp = client.request(req)
+        except Exception:
+            continue
+        for t in resp.result.get("transactions", []):
+            tx = t.get("tx_json") or t.get("tx") or {}
+            # Hash may live at the envelope level or inside tx_json
+            h = tx.get("hash") or t.get("hash") or ""
+            if h and h not in seen:
+                seen[h] = tx
+
+    # Sort newest-first by Ripple date
+    sorted_txns = sorted(seen.values(), key=lambda x: x.get("date", 0), reverse=True)
+
+    result = []
+    for tx in sorted_txns[:30]:
+        tx_type = tx.get("TransactionType", "")
+        account = tx.get("Account", "")
+        destination = tx.get("Destination", "")
+        direction, label = _classify_event(tx_type, account, destination, fund_addr, sub_addr)
+        result.append(
+            {
+                "id": (tx.get("hash") or "")[:16],
+                "time": _fmt_time(tx.get("date", 0)),
+                "type": label,
+                "amount": _extract_amount(tx.get("Amount") or tx.get("DeliverMax") or "-"),
+                "account": account,
+                "direction": direction,
+            }
+        )
+
+    return result
 
 
 
