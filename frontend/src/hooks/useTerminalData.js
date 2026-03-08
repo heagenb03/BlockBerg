@@ -5,6 +5,7 @@ import { mockFunds, mockFund, mockYieldForecast, mockAnomalies, mockRiskScores, 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 const POLL_INTERVAL = 5000
 const EVENTS_POLL_INTERVAL = 10000
+const YIELD_POLL_INTERVAL = 10000
 const MAX_ANOMALY_HISTORY = 100
 
 export function useTerminalData() {
@@ -83,11 +84,19 @@ export function useTerminalData() {
       }
     }, EVENTS_POLL_INTERVAL)
 
+    const yieldInterval = setInterval(async () => {
+      try {
+        const res = await axios.get('/api/ml/yield-forecast')
+        setYieldForecast(res.data)
+      } catch {}
+    }, YIELD_POLL_INTERVAL)
+
     return () => {
       mountedRef.current = false
       clearInterval(anomalyInterval)
       clearInterval(escrowInterval)
       clearInterval(eventsInterval)
+      clearInterval(yieldInterval)
     }
   }, [])
 
