@@ -1,41 +1,14 @@
-"""
-Risk scorer for MMF Terminal.
-
-Model: weighted composite (MinMaxScaler, 0–100). No supervised ML — pure
-heuristic scoring on fund metadata + yield-history volatility.
-
-Sub-scores
-----------
-nw_stress   — net-worth / structural risk
-                 features: tvl_size (inv), kyc_required (penalty), min_investment (inv)
-vol_index   — yield volatility risk
-                 features: yield_volatility, network_count (inv)
-
-Composite score = 0.50 * nw_stress + 0.50 * vol_index
-
-Exported
---------
-get_risk_scores() → list[dict]
-"""
-
 from __future__ import annotations
-
 import csv
 import logging
 from pathlib import Path
 from typing import Any
-
 import numpy as np
-
+from data_fetcher import FUND_TICKERS, _FUND_META
+from data_fetcher import get_fund_list
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
 _YIELD_CSV = Path(__file__).parent / "daily_yields_2-19-26_to_3-6-26.csv"
-
-# Map CSV product name prefix → ticker (short names used in the actual CSV)
 _CSV_PRODUCT_MAP: dict[str, str] = {
     "BlackRock BUIDL": "BUIDL",
     "Circle USYC": "USYC",
@@ -44,18 +17,15 @@ _CSV_PRODUCT_MAP: dict[str, str] = {
     "WisdomTree Gov MMF": "WTGXX",
 }
 
-_DEFAULT_YIELD_VOL: float = 0.15   # fallback when CSV is missing or ticker not found
-_MMFXX_YIELD_VOL: float = 0.12    # synthetic XRPL fund — low volatility by design
+_DEFAULT_YIELD_VOL: float = 0.15
+_MMFXX_YIELD_VOL: float = 0.12
 
 # Scoring weights
-_NW_WEIGHTS = (0.55, 0.30, 0.15)   # tvl_inv, kyc_penalty, min_inv_inv
-_VOL_WEIGHTS = (0.60, 0.40)         # yield_vol, net_inv
-_COMPOSITE_WEIGHTS = (0.50, 0.50)   # nw_stress, vol_index
+_NW_WEIGHTS = (0.55, 0.30, 0.15) # tvl_inv, kyc_penalty, min_inv_inv
+_VOL_WEIGHTS = (0.60, 0.40) # yield_vol, net_inv
+_COMPOSITE_WEIGHTS = (0.50, 0.50) # nw_stress, vol_index
 
-
-# ---------------------------------------------------------------------------
-# Data loading
-# ---------------------------------------------------------------------------
+# Load data
 
 def _load_yield_volatility() -> dict[str, float]:
     """Parse daily_yields CSV → per-ticker std-dev of yield (as decimal, not %).
@@ -79,7 +49,7 @@ def _load_yield_volatility() -> dict[str, float]:
                 product = row[0].strip()
                 ticker = next(
                     (t for prefix, t in _CSV_PRODUCT_MAP.items()
-                     if product.startswith(prefix)),
+                    if product.startswith(prefix)),
                     None,
                 )
                 if ticker is None:
@@ -109,12 +79,9 @@ def _load_fund_features() -> list[dict[str, Any]]:
 
     Falls back to _FUND_META from data_fetcher if the live API call fails.
     """
-    from data_fetcher import FUND_TICKERS, _FUND_META  # noqa: PLC0415
-
     vols = _load_yield_volatility()
 
     try:
-        from data_fetcher import get_fund_list  # noqa: PLC0415
         live = {f["ticker"]: f for f in get_fund_list()}
     except Exception:
         logger.warning("data_fetcher unavailable — using hardcoded _FUND_META.")
@@ -137,10 +104,6 @@ def _load_fund_features() -> list[dict[str, Any]]:
     return features
 
 
-# ---------------------------------------------------------------------------
-# MinMaxScaler helper
-# ---------------------------------------------------------------------------
-
 def _safe_minmax(arr: np.ndarray) -> np.ndarray:
     """MinMaxScale arr to [0, 1]; if all values are identical return 0.5 array."""
     lo, hi = arr.min(), arr.max()
@@ -148,10 +111,6 @@ def _safe_minmax(arr: np.ndarray) -> np.ndarray:
         return np.full_like(arr, 0.5, dtype=float)
     return (arr - lo) / (hi - lo)
 
-
-# ---------------------------------------------------------------------------
-# Sub-score computation
-# ---------------------------------------------------------------------------
 
 def _compute_nw_stress(features: list[dict[str, Any]]) -> np.ndarray:
     """Compute net-worth stress scores (0–100) for each fund.
@@ -214,10 +173,7 @@ def _compute_vol_index(features: list[dict[str, Any]]) -> np.ndarray:
     return composite * 100.0
 
 
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
+# API
 def get_risk_scores() -> list[dict[str, Any]]:
     """Compute per-fund risk scores for all FUND_TICKERS.
 
