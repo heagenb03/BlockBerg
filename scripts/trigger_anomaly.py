@@ -9,13 +9,16 @@ Usage
     # From repo root, with the backend .venv active:
     python scripts/trigger_anomaly.py --type large
     python scripts/trigger_anomaly.py --type burst
+    python scripts/trigger_anomaly.py --type subscribe
 
 Modes
 -----
-    large  — one transfer of 250,000 tokens (2× normal ceiling of 125k)
-             triggers "Large Transfer" alert in AlertFeed
-    burst  — 6 rapid transfers of 100,000 tokens each (~10s apart)
-             creates visible activity spike in the event buffer
+    large      — one transfer of 250,000 tokens (2× normal ceiling of 125k)
+                 subscriber → fund; triggers "Large Transfer" alert; appears as REDEMPTION
+    burst      — 6 rapid transfers of 100,000 tokens each (~10s apart)
+                 subscriber → fund; activity spike in the event buffer; appears as REDEMPTION
+    subscribe  — one fund → subscriber payment of 100,000 tokens
+                 fund delivering tokens to investor; appears as SUBSCRIPTION in EventStream
 """
 
 from __future__ import annotations
@@ -33,10 +36,11 @@ STATE_FILE = REPO_ROOT / "backend" / "state.json"
 TESTNET_URL = "https://s.altnet.rippletest.net:51234"
 RIPPLE_EPOCH = 946684800
 
-LARGE_TRANSFER_AMOUNT = 250_000   # 2× normal ceiling — triggers "Large Transfer"
-BURST_AMOUNT          = 100_000   # normal size, just sent many times quickly
-BURST_COUNT           = 6
-BURST_DELAY_SECONDS   = 8         # gap between burst transfers
+LARGE_TRANSFER_AMOUNT     = 250_000   # 2× normal ceiling — triggers "Large Transfer"
+BURST_AMOUNT              = 100_000   # normal size, just sent many times quickly
+BURST_COUNT               = 6
+BURST_DELAY_SECONDS       = 8         # gap between burst transfers
+SUBSCRIBE_AMOUNT          = 100_000   # fund → subscriber, simulates token issuance/subscription
 
 
 def load_state() -> dict:
@@ -75,8 +79,8 @@ def send_mpt_transfer(
 def trigger_large(state: dict) -> None:
     """Send one oversized transfer to trigger 'Large Transfer' alert.
 
-    Sends subscriber → fund wallet (simulates a large redemption event).
-    The subscriber holds the MPT balance; the fund wallet is the destination.
+    Sends subscriber → fund wallet (investor returning tokens = redemption).
+    Appears as REDEMPTION ↓ in the EventStream panel.
     """
     from xrpl.clients import JsonRpcClient
     from xrpl.wallet import Wallet
@@ -118,13 +122,40 @@ def trigger_burst(state: dict) -> None:
     print("Check the EventStream panel for live activity.")
 
 
+def trigger_subscribe(state: dict) -> None:
+    """Send one fund → subscriber payment to simulate MMF token subscription issuance.
+
+    This is the fund distributing newly-subscribed tokens to an investor.
+    Appears as REDEMPTION in EventStream (fund paying tokens OUT to subscriber).
+    """
+    from xrpl.clients import JsonRpcClient
+    from xrpl.wallet import Wallet
+
+    print(f"\nTriggering SUBSCRIBE ({SUBSCRIBE_AMOUNT:,} tokens fund → subscriber)...")
+    client = JsonRpcClient(TESTNET_URL)
+    fund_wallet = Wallet.from_seed(state["wallet_seed"])
+    subscriber_address = Wallet.from_seed(state["subscriber_seed"]).classic_address
+    mpt_id = state["mpt_issuance_id"]
+
+    send_mpt_transfer(
+        client, fund_wallet, subscriber_address, mpt_id,
+        SUBSCRIBE_AMOUNT, "SUBSCRIBE"
+    )
+    print("\nDone. Check the EventStream panel — should appear as SUBSCRIPTION ↑ (fund delivering tokens to investor).")
+    print("Use --type large or --type burst to show REDEMPTION ↓ (investor returning tokens to fund).")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Trigger MMF Terminal demo anomalies")
     parser.add_argument(
         "--type",
-        choices=["large", "burst"],
+        choices=["large", "burst", "subscribe"],
         default="large",
-        help="large: single oversized transfer | burst: rapid succession of normal transfers",
+        help=(
+            "large: single oversized transfer (subscriber→fund, shows as SUBSCRIPTION) | "
+            "burst: rapid succession of transfers (subscriber→fund, shows as SUBSCRIPTION) | "
+            "subscribe: single fund→subscriber payment (shows as REDEMPTION)"
+        ),
     )
     args = parser.parse_args()
 
@@ -134,8 +165,10 @@ def main() -> None:
 
     if args.type == "large":
         trigger_large(state)
-    else:
+    elif args.type == "burst":
         trigger_burst(state)
+    else:
+        trigger_subscribe(state)
 
 
 if __name__ == "__main__":
