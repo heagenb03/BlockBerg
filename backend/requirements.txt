@@ -4,3 +4,4 @@ scikit-learn>=1.0
 xrpl-py==4.5.0
 fastapi[standard]>=0.135.0
 requests>=2.31.0
+tensorflow>=2.10.0
