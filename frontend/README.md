@@ -1,4 +1,4 @@
-# XRPLBlerg Frontend
+# BlockBerg Frontend
 
 React-based “Bloomberg-style” terminal UI for tokenized MMFs: resizable panels, fund cards, yield chart with ML forecast, escrow panel, alert feed, event stream, and risk gauges.
 
