@@ -1,4 +1,4 @@
-# XRPLBlerg Backend
+# BlockBerg Backend
 
 FastAPI service that provides fund watchlists, XRPL (testnet) fund/events/escrow data, and ML endpoints: yield forecast, anomaly detection, and risk scores.
 
