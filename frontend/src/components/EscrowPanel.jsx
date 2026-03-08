@@ -10,10 +10,18 @@ import {
 
 const LIVE_TICKER = 'MMFXX'
 
-function formatEscrowId(id) {
+// ID col is ~22% of panel. The ':seq' suffix is fixed; addr part expands with space.
+function formatEscrowId(id, panelWidth = 0) {
   const [addr, seq] = id.split(':')
   if (!addr || !seq) return id
-  return `…${addr.slice(-6)}:${seq}`
+  const colPx = Math.max(60, panelWidth * 0.22 - 10)
+  const seqPx = (seq.length + 1) * 7 // +1 for ':'
+  const addrPx = Math.max(40, colPx - seqPx)
+  const half = Math.max(4, Math.floor((Math.floor(addrPx / 7) - 3) / 2))
+  const truncAddr = addr.length > half * 2 + 3
+    ? `${addr.slice(0, half)}...${addr.slice(-half)}`
+    : addr
+  return `${truncAddr}:${seq}`
 }
 
 function formatAmount(n) {
@@ -59,8 +67,17 @@ function getStatusColor(status) {
 
 export function EscrowPanel({ selectedTicker, escrow, onTickerChange }) {
   const [localTicker, setLocalTicker] = useState(selectedTicker)
+  const [containerWidth, setContainerWidth] = useState(0)
   const containerRef = useRef(null)
   const fontSize = usePanelFontSize(containerRef)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => setContainerWidth(entry.contentRect.width))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
   const df = dataFontSize(fontSize)
   const chStyle = colHeaderStyle(fontSize)
 
@@ -133,7 +150,7 @@ export function EscrowPanel({ selectedTicker, escrow, onTickerChange }) {
                 onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1E2530'}
                 onMouseLeave={(e) => e.currentTarget.style.backgroundColor = i % 2 === 0 ? 'transparent' : 'rgba(17,22,29,0.2)'}
               >
-                <div style={{ width: '22%', color: TEXT_PRIMARY, flexShrink: 0 }}>{formatEscrowId(pos.escrow_id)}</div>
+                <div style={{ width: '22%', color: TEXT_PRIMARY, flexShrink: 0 }}>{formatEscrowId(pos.escrow_id, containerWidth)}</div>
                 <div style={{ width: '20%', color: TEXT_WHITE, textAlign: 'right', flexShrink: 0 }}>{formatAmount(pos.amount)}</div>
                 <div style={{ width: '18%', color: TEXT_MUTED, textAlign: 'right', flexShrink: 0 }}>
                   {pos.status === 'settled' ? 'SETTLED' : formatFinishAfter(pos.finish_after)}
