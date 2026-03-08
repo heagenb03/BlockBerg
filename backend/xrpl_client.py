@@ -11,8 +11,13 @@ Delete state.json to start fresh (re-issues everything).
 
 from __future__ import annotations
 
+import asyncio
+import itertools
 import json
 import logging
+import os
+import random
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -20,7 +25,7 @@ from typing import Any
 from xrpl.clients import JsonRpcClient
 from xrpl.models.requests import AccountTx
 from xrpl.models.amounts import MPTAmount
-from xrpl.models.transactions import EscrowCreate, MPTokenAuthorize, MPTokenIssuanceCreate, Payment
+from xrpl.models.transactions import EscrowCreate, EscrowFinish, MPTokenAuthorize, MPTokenIssuanceCreate, Payment
 from xrpl.models.transactions.mptoken_issuance_create import MPTokenIssuanceCreateFlag
 from xrpl.transaction import submit_and_wait
 from xrpl.wallet import Wallet, generate_faucet_wallet
@@ -54,8 +59,27 @@ _METADATA_JSON = json.dumps(
 )
 METADATA_HEX = _METADATA_JSON.encode().hex().upper()
 
+# Variability constants for escrow lifecycle
+DEMO_AMOUNT_BASE = 100_000
+DEMO_AMOUNT_JITTER = 0.25          # ±25%
+DEMO_DURATION_BASE = 300           # 5 min in seconds
+DEMO_DURATION_JITTER = 0.15        # ±15%
+BURST_CHANCE = 0.20                # 20% per settler cycle
+BURST_COUNT_RANGE = (2, 3)
+BURST_AMOUNT_RANGE = (200_000, 1_200_000)
+BURST_DURATION_HOURS = (1, 18)
+SETTLER_INTERVAL_RANGE = (45, 75)  # seconds
+FINISH_DELAY_RANGE = (30, 90)      # seconds of visible "finished" state before on-chain settle
+MAX_ESCROW_ENTRIES = 15
+
+# Sell / redemption event constants (paired: fund→subscriber then subscriber→fund)
+SELL_CHANCE = 0.25                 # 25% per settler cycle
+SELL_COUNT_RANGE = (1, 2)          # 1-2 sell pairs per trigger
+SELL_AMOUNT_RANGE = (25_000, 100_000)  # below 125k anomaly threshold
+
 # Escrow positions created on startup for demo (staggered finish times)
 _ESCROW_CONFIGS = [
+    {"amount": "100000",  "label": "Demo (5min)",    "hours": 0.0833},  # 5 min — full lifecycle visible live
     {"amount": "500000",  "label": "Subscription A", "hours": 2},
     {"amount": "250000",  "label": "Subscription B", "hours": 6},
     {"amount": "1000000", "label": "Subscription C", "hours": 12},
@@ -70,6 +94,10 @@ _fund_wallet: Wallet | None = None
 _subscriber_wallet: Wallet | None = None
 _mpt_issuance_id: str = ""
 _escrow_positions: list[dict] = []
+
+# Thread lock protecting _escrow_positions from concurrent access
+_escrow_lock = threading.Lock()
+
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +119,9 @@ def _load_state() -> dict:
 
 
 def _save_state(state: dict) -> None:
-    STATE_FILE.write_text(json.dumps(state, indent=2))
+    tmp = STATE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2))
+    os.replace(tmp, STATE_FILE)
 
 
 def _setup_wallets(
@@ -212,10 +242,35 @@ def _create_escrows(
 ) -> list[dict]:
     now = _ripple_now()
     existing = state.get("escrows", [])
-    active = [e for e in existing if e["finish_after"] > now]
+
+    active = [e for e in existing if e["finish_after"] > now and e.get("status") != "settled"]
+    expired_unsettled = [e for e in existing if e["finish_after"] <= now and e.get("status") != "settled"]
+    settled = [e for e in existing if e.get("status") == "settled"]
+
+    # Finish any orphaned escrows left over from a previous server session
+    if expired_unsettled:
+        logger.info("Finishing %d orphaned escrow(s) from previous session...", len(expired_unsettled))
+        for escrow in expired_unsettled:
+            if _finish_escrow(client, escrow, fund_wallet):
+                settled.append(escrow)
+        state["escrows"] = active + settled
+        _save_state(state)
+
     if active:
         logger.info("Reusing %d active escrow(s) from state.json.", len(active))
-        return active
+        return active + settled
+
+    # Re-fund subscriber: EscrowFinish releases tokens to fund wallet (destination),
+    # so the subscriber needs tokens transferred back before creating new escrows.
+    total_needed = str(sum(int(c["amount"]) for c in _ESCROW_CONFIGS))
+    if expired_unsettled or not existing:
+        logger.info("Re-funding subscriber with %s tokens for new escrows...", total_needed)
+        pay_tx = Payment(
+            account=fund_wallet.classic_address,
+            destination=subscriber_wallet.classic_address,
+            amount=MPTAmount(mpt_issuance_id=mpt_id, value=total_needed),
+        )
+        submit_and_wait(pay_tx, client, fund_wallet)
 
     logger.info("Creating %d escrow positions...", len(_ESCROW_CONFIGS))
     escrows: list[dict] = []
@@ -242,12 +297,288 @@ def _create_escrows(
             }
         )
         logger.info(
-            "  Escrow %s: %s tokens, %dhr lock", escrow_id, cfg["amount"], cfg["hours"]
+            "  Escrow %s: %s tokens, %.4ghr lock", escrow_id, cfg["amount"], cfg["hours"]
         )
 
-    state["escrows"] = escrows
+    all_escrows = settled + escrows
+    state["escrows"] = all_escrows
     _save_state(state)
-    return escrows
+    return all_escrows
+
+
+# ---------------------------------------------------------------------------
+# Escrow settlement helpers
+# ---------------------------------------------------------------------------
+
+def _finish_escrow(client: JsonRpcClient, escrow: dict, fund_wallet: Wallet) -> bool:
+    """Submit EscrowFinish on-chain for a single matured escrow.
+
+    Returns True if settled (including already-settled on-chain).
+    Mutates escrow["status"] to "settled" on success.
+    """
+    try:
+        seq = int(escrow["sequence"])
+        if seq <= 0:
+            raise ValueError(f"Invalid sequence: {seq}")
+    except (KeyError, ValueError, TypeError) as exc:
+        logger.warning("Invalid escrow sequence for %s: %s", escrow.get("escrow_id"), exc)
+        return False
+
+    try:
+        tx = EscrowFinish(
+            account=fund_wallet.classic_address,
+            owner=escrow["subscriber"],
+            offer_sequence=seq,
+        )
+        result = submit_and_wait(tx, client, fund_wallet)
+        tx_result = result.result.get("meta", {}).get("TransactionResult", "")
+        if tx_result != "tesSUCCESS":
+            logger.warning(
+                "EscrowFinish for %s returned %s", escrow.get("escrow_id"), tx_result
+            )
+            return False
+        escrow["status"] = "settled"
+        escrow["settled_at"] = int(time.time())
+        logger.info("Settled escrow %s (%s tokens)", escrow.get("escrow_id"), escrow.get("amount"))
+        return True
+    except Exception as exc:
+        if "tecNO_TARGET" in str(exc):
+            logger.info(
+                "Escrow %s already settled on-chain (tecNO_TARGET) — marking settled",
+                escrow.get("escrow_id"),
+            )
+            escrow["status"] = "settled"
+            escrow.setdefault("settled_at", int(time.time()))
+            return True
+        logger.warning("EscrowFinish error for %s: %s", escrow.get("escrow_id"), exc)
+        return False
+
+
+def _finish_expired_escrows() -> int:
+    """Finish all matured, unsettled escrows. Returns count of newly settled.
+
+    Newly matured escrows are first marked 'finished' with a random 30-90s delay
+    before on-chain EscrowFinish is submitted, so the UI shows the 'finished'
+    status briefly before transitioning to 'settled'.
+    """
+    client = _new_client()
+    now = _ripple_now()
+
+    with _escrow_lock:
+        # Mark newly matured active escrows as "finished" with a random settle delay
+        for e in _escrow_positions:
+            if (
+                e["finish_after"] <= now
+                and e.get("status") == "active"
+                and "_settle_eligible_at" not in e
+            ):
+                delay = random.randint(*FINISH_DELAY_RANGE)
+                e["_settle_eligible_at"] = now + delay
+                e["status"] = "finished"
+                logger.info(
+                    "Escrow %s matured; will settle in %ds",
+                    e.get("escrow_id"), delay,
+                )
+
+        to_settle = [
+            e for e in _escrow_positions
+            if e.get("status") == "finished"
+            and now >= e.get("_settle_eligible_at", 0)
+        ]
+
+    settled_count = 0
+    for escrow in to_settle:
+        if _finish_escrow(client, escrow, _fund_wallet):
+            settled_count += 1
+            with _escrow_lock:
+                _state["escrows"] = list(_escrow_positions)
+                _save_state(_state)
+
+    return settled_count
+
+
+def _maybe_recreate_demo_escrow() -> None:
+    """If the demo escrow is settled, re-fund subscriber and create a fresh 5-min escrow."""
+    demo_label = "Demo (5min)"
+    with _escrow_lock:
+        demo = next((e for e in _escrow_positions if e.get("label") == demo_label), None)
+        if demo is None or demo.get("status") != "settled":
+            return
+
+    # Randomize amount ±25% and duration ±15%
+    amount = int(DEMO_AMOUNT_BASE * random.uniform(1 - DEMO_AMOUNT_JITTER, 1 + DEMO_AMOUNT_JITTER))
+    duration = int(DEMO_DURATION_BASE * random.uniform(1 - DEMO_DURATION_JITTER, 1 + DEMO_DURATION_JITTER))
+
+    client = _new_client()
+    # Re-fund subscriber (settled tokens went to fund wallet as destination)
+    try:
+        pay_tx = Payment(
+            account=_fund_wallet.classic_address,
+            destination=_subscriber_wallet.classic_address,
+            amount=MPTAmount(mpt_issuance_id=_mpt_issuance_id, value=str(amount)),
+        )
+        submit_and_wait(pay_tx, client, _fund_wallet)
+    except Exception as exc:
+        logger.warning("Demo escrow re-fund failed: %s", exc)
+        return
+
+    # Create a new demo escrow with jittered duration
+    now = _ripple_now()
+    finish_after = now + duration
+    try:
+        tx = EscrowCreate(
+            account=_subscriber_wallet.classic_address,
+            destination=_fund_wallet.classic_address,
+            amount=MPTAmount(mpt_issuance_id=_mpt_issuance_id, value=str(amount)),
+            finish_after=finish_after,
+        )
+        result = submit_and_wait(tx, client, _subscriber_wallet)
+        seq = result.result.get("tx_json", {}).get("Sequence")
+        new_demo: dict = {
+            "escrow_id": f"{_subscriber_wallet.classic_address}:{seq}",
+            "subscriber": _subscriber_wallet.classic_address,
+            "amount": str(amount),
+            "label": demo_label,
+            "finish_after": finish_after,
+            "sequence": seq,
+            "status": "active",
+        }
+        with _escrow_lock:
+            # Append new demo entry instead of replacing — keeps settlement history visible
+            _escrow_positions.append(new_demo)
+            # Cap total entries at MAX_ESCROW_ENTRIES: trim oldest settled demo escrows first
+            settled_demos = [
+                e for e in _escrow_positions
+                if e.get("label") == demo_label and e.get("status") == "settled"
+            ]
+            while len(_escrow_positions) > MAX_ESCROW_ENTRIES and settled_demos:
+                oldest = settled_demos.pop(0)
+                _escrow_positions.remove(oldest)
+            _state["escrows"] = list(_escrow_positions)
+            _save_state(_state)
+        logger.info("Demo escrow recreated: %d tokens, %ds lock", amount, duration)
+    except Exception as exc:
+        logger.warning("Demo escrow recreation failed: %s", exc)
+
+
+_burst_counter: itertools.count = itertools.count(1)  # thread-safe label counter
+_sell_counter: itertools.count = itertools.count(1)   # thread-safe sell event counter
+
+
+def _maybe_create_burst_escrows() -> None:
+    """20% chance per settler cycle to spawn 2-3 random subscription escrows."""
+    if random.random() > BURST_CHANCE:
+        return
+
+    count = random.randint(*BURST_COUNT_RANGE)
+
+    # Re-check cap under the lock before proceeding
+    with _escrow_lock:
+        active_count = len([e for e in _escrow_positions if e.get("status") != "settled"])
+        if active_count + count > MAX_ESCROW_ENTRIES:
+            return
+
+    client = _new_client()
+    for _ in range(count):
+        amount = random.randint(*BURST_AMOUNT_RANGE)
+        hours = random.uniform(*BURST_DURATION_HOURS)
+        label = f"Subscription {next(_burst_counter)}"
+        try:
+            pay_tx = Payment(
+                account=_fund_wallet.classic_address,
+                destination=_subscriber_wallet.classic_address,
+                amount=MPTAmount(mpt_issuance_id=_mpt_issuance_id, value=str(amount)),
+            )
+            submit_and_wait(pay_tx, client, _fund_wallet)
+
+            now = _ripple_now()
+            finish_after = now + int(hours * 3600)
+            tx = EscrowCreate(
+                account=_subscriber_wallet.classic_address,
+                destination=_fund_wallet.classic_address,
+                amount=MPTAmount(mpt_issuance_id=_mpt_issuance_id, value=str(amount)),
+                finish_after=finish_after,
+            )
+            result = submit_and_wait(tx, client, _subscriber_wallet)
+            seq = result.result.get("tx_json", {}).get("Sequence")
+            with _escrow_lock:
+                _escrow_positions.append({
+                    "escrow_id": f"{_subscriber_wallet.classic_address}:{seq}",
+                    "subscriber": _subscriber_wallet.classic_address,
+                    "amount": str(amount),
+                    "label": label,
+                    "finish_after": finish_after,
+                    "sequence": seq,
+                    "status": "active",
+                })
+                # Trim oldest settled entries if over cap
+                while len(_escrow_positions) > MAX_ESCROW_ENTRIES:
+                    settled = [e for e in _escrow_positions if e.get("status") == "settled"]
+                    if not settled:
+                        break
+                    _escrow_positions.remove(settled[0])
+                _state["escrows"] = list(_escrow_positions)
+                _save_state(_state)
+            logger.info("Burst escrow created: %d tokens, %.1fhr lock (%s)", amount, hours, label)
+        except Exception as exc:
+            logger.warning("Burst escrow creation failed (%s): %s", label, exc)
+
+
+def _maybe_create_sell_events() -> None:
+    """25% chance per settler cycle to create 1-2 standalone redemption events.
+
+    Models investors independently redeeming MMF tokens (subscriber → fund).
+    Appears as REDEMPTION ▼ in the EventStream. Fails gracefully if the
+    subscriber wallet has insufficient balance — the burst escrow funding cycle
+    replenishes it regularly enough for most sells to succeed.
+    """
+    if random.random() > SELL_CHANCE:
+        return
+
+    count = random.randint(*SELL_COUNT_RANGE)
+    client = _new_client()
+
+    for _ in range(count):
+        amount = random.randint(*SELL_AMOUNT_RANGE)
+        n = next(_sell_counter)
+        try:
+            sell_tx = Payment(
+                account=_subscriber_wallet.classic_address,
+                destination=_fund_wallet.classic_address,
+                amount=MPTAmount(mpt_issuance_id=_mpt_issuance_id, value=str(amount)),
+            )
+            submit_and_wait(sell_tx, client, _subscriber_wallet)
+            logger.info("Redemption event %d: %d tokens", n, amount)
+        except Exception as exc:
+            logger.warning("Sell event %d failed: %s", n, exc)
+
+
+def _settle_and_refresh() -> None:
+    """Blocking: finish expired escrows and recreate demo escrow if needed. Run in executor."""
+    settled = _finish_expired_escrows()
+    if settled:
+        logger.info("Escrow settler: settled %d escrow(s).", settled)
+    _maybe_recreate_demo_escrow()
+    _maybe_create_burst_escrows()
+    _maybe_create_sell_events()
+
+
+async def run_escrow_settler() -> None:
+    """Background task: settle matured escrows every 60s and refresh the demo escrow.
+
+    Mirrors run_xrpl_stream() pattern — retries on error, cancels cleanly.
+    All blocking XRPL calls run in an executor to avoid blocking the event loop.
+    """
+    while True:
+        try:
+            await asyncio.sleep(random.randint(*SETTLER_INTERVAL_RANGE))
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _settle_and_refresh)
+        except asyncio.CancelledError:
+            logger.info("Escrow settler task cancelled.")
+            raise
+        except Exception as exc:
+            logger.warning("Escrow settler error: %s — retrying next cycle", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -323,34 +654,153 @@ def _fmt_time(ripple_date: int) -> str:
     return f"{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}"
 
 
-def get_events() -> list[dict[str, Any]]:
-    """Fetch recent XRPL transactions for GET /api/xrpl/events."""
-    client = _new_client()
-    req = AccountTx(account=_fund_wallet.classic_address, limit=25)
-    resp = client.request(req)
-    txns = resp.result.get("transactions", [])
+def _extract_amount(raw: Any) -> str:
+    """Return a plain numeric string from an XRPL Amount field.
 
-    return [
-        {
-            "id": t.get("tx", {}).get("hash", "")[:16],
-            "time": _fmt_time(t.get("tx", {}).get("date", 0)),
-            "type": _TX_TYPE_MAP.get(
-                t.get("tx", {}).get("TransactionType", ""), "TRANSFER"
-            ),
-            "amount": str(t.get("tx", {}).get("Amount", "-")),
-            "account": t.get("tx", {}).get("Account", ""),
-        }
-        for t in txns
-    ]
+    MPT amounts arrive as {"mpt_issuance_id": "...", "value": "123456"}.
+    XRP drops arrive as a plain string/int. Return "-" for missing/empty.
+    """
+    if isinstance(raw, dict):
+        return raw.get("value", "-")
+    val = str(raw) if raw else "-"
+    return val if val else "-"
+
+
+def _lookup_escrow_amount(offer_sequence: int | None) -> str:
+    """Look up the token amount for an escrow by its OfferSequence.
+
+    EscrowFinish carries no Amount field — it references the original EscrowCreate
+    via OfferSequence (== that tx's Sequence number). We resolve the amount from
+    the in-memory _escrow_positions list, which stores sequence + amount at creation.
+    Returns the amount string if found, "-" otherwise.
+    """
+    if offer_sequence is None:
+        return "-"
+    try:
+        seq_int = int(offer_sequence)
+    except (ValueError, TypeError):
+        return "-"
+    with _escrow_lock:
+        for e in _escrow_positions:
+            if e.get("sequence") == seq_int:
+                return str(e.get("amount", "-"))
+    logger.debug("No escrow found for OfferSequence %s", offer_sequence)
+    return "-"
+
+
+def _classify_event(
+    tx_type: str, account: str, destination: str, fund_addr: str, sub_addr: str
+) -> tuple[str, str]:
+    """Return (direction, display_label) for an XRPL transaction.
+
+    Directions:
+      SUB — subscription / investment in (subscriber → fund)
+      RDM — redemption / payout out (fund → subscriber)
+      CLR — settlement clearance (EscrowFinish)
+      —   — neutral / administrative
+    """
+    if tx_type == "Payment":
+        if account == fund_addr and destination == sub_addr:
+            # Fund delivers tokens to investor = subscription issuance
+            return "SUB", "SUBSCRIPTION"
+        if account == sub_addr and destination == fund_addr:
+            # Investor returns tokens to fund = redemption request
+            return "RDM", "REDEMPTION"
+        return "—", "PAYMENT"
+
+    if tx_type == "EscrowCreate":
+        if account == sub_addr:
+            return "SUB", "ESCROW_CREATE"
+        return "—", "ESCROW_CREATE"
+
+    if tx_type == "EscrowFinish":
+        return "CLR", "ESCROW_FINISH"
+
+    return "—", _TX_TYPE_MAP.get(tx_type, "TRANSFER")
+
+
+def get_events() -> list[dict[str, Any]]:
+    """Fetch recent XRPL transactions for GET /api/xrpl/events.
+
+    Queries both fund and subscriber wallets, deduplicates by hash, sorts
+    newest-first, and annotates each event with a ``direction`` field so the
+    frontend can distinguish subscriptions (SUB), redemptions (RDM), and
+    settlement clearances (CLR).
+    """
+    if _fund_wallet is None or _subscriber_wallet is None:
+        return []
+
+    fund_addr = _fund_wallet.classic_address
+    sub_addr = _subscriber_wallet.classic_address
+    client = _new_client()
+
+    # Collect unique transactions from both wallets keyed by hash
+    seen: dict[str, dict] = {}
+    for account in (fund_addr, sub_addr):
+        req = AccountTx(account=account, limit=25)
+        try:
+            resp = client.request(req)
+        except Exception:
+            continue
+        for t in resp.result.get("transactions", []):
+            tx = t.get("tx_json") or t.get("tx") or {}
+            # Hash may live at the envelope level or inside tx_json
+            h = tx.get("hash") or t.get("hash") or ""
+            if h and h not in seen:
+                seen[h] = tx
+
+    # Sort newest-first by Ripple date
+    sorted_txns = sorted(seen.values(), key=lambda x: x.get("date", 0), reverse=True)
+
+    result = []
+    for tx in sorted_txns[:30]:
+        tx_type = tx.get("TransactionType", "")
+        account = tx.get("Account", "")
+        destination = tx.get("Destination", "")
+        direction, label = _classify_event(tx_type, account, destination, fund_addr, sub_addr)
+
+        # EscrowFinish has no Amount field on-chain — resolve via OfferSequence lookup
+        if label == "ESCROW_FINISH":
+            offer_seq = tx.get("OfferSequence")
+            if offer_seq is None:
+                offer_seq = tx.get("offer_sequence")
+            amount = _lookup_escrow_amount(offer_seq)
+        else:
+            amount = _extract_amount(tx.get("Amount") or tx.get("DeliverMax") or "-")
+
+        result.append(
+            {
+                "id": (tx.get("hash") or "")[:16],
+                "time": _fmt_time(tx.get("date", 0)),
+                "type": label,
+                "amount": amount,
+                "account": account,
+                "direction": direction,
+            }
+        )
+
+    return result
+
 
 
 def get_escrow_positions() -> list[dict[str, Any]]:
     """Return current escrow positions for GET /api/xrpl/escrow."""
     now = _ripple_now()
+    with _escrow_lock:
+        positions = list(_escrow_positions)
+
     result = []
-    for e in _escrow_positions:
+    for e in positions:
         unix_finish = e["finish_after"] + RIPPLE_EPOCH
-        is_active = e["finish_after"] > now
+        persisted_status = e.get("status", "active")
+        if persisted_status == "settled":
+            display_status = "settled"
+        elif persisted_status == "finished":
+            display_status = "finished"
+        elif e["finish_after"] > now:
+            display_status = "maturing"
+        else:
+            display_status = "finished"
         result.append(
             {
                 "escrow_id": e["escrow_id"],
@@ -362,8 +812,12 @@ def get_escrow_positions() -> list[dict[str, Any]]:
                 "finish_after": time.strftime(
                     "%Y-%m-%dT%H:%M:%SZ", time.gmtime(unix_finish)
                 ),
-                # status values EscrowPanel knows: 'maturing', 'finished', default=pending
-                "status": "maturing" if is_active else "finished",
+                # status: settled (on-chain finished) > maturing (active) > finished (expired, pending settle)
+                "status": display_status,
+                # ISO string when settled on-chain, null otherwise
+                "settled_at": time.strftime(
+                    "%Y-%m-%dT%H:%M:%SZ", time.gmtime(e["settled_at"])
+                ) if e.get("settled_at") else None,
             }
         )
     return result

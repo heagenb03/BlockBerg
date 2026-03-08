@@ -59,20 +59,23 @@ export const mockRiskScores = [
 ]
 
 export const mockEscrow = [
-  { escrow_id: 'ESC-001', subscriber: 'rPjU...9Kx', amount: 1_200_000, finish_after: '2026-03-07T10:00:00Z', status: 'pending' },
-  { escrow_id: 'ESC-002', subscriber: 'rQZc...5Wt', amount:   500_000, finish_after: '2026-03-07T14:00:00Z', status: 'pending' },
-  { escrow_id: 'ESC-003', subscriber: 'rUa2...bNq', amount:   100_000, finish_after: '2026-03-07T10:00:00Z', status: 'pending' },
-  { escrow_id: 'ESC-004', subscriber: 'rLb9...3Po', amount:    50_000, finish_after: '2026-03-06T22:00:00Z', status: 'maturing' },
-  { escrow_id: 'ESC-005', subscriber: 'rHx8...2Xl', amount:   250_000, finish_after: '2026-03-08T10:00:00Z', status: 'pending' },
+  { escrow_id: 'ESC-001', subscriber: 'rPjU...9Kx', amount: 100_000, finish_after: '2026-03-07T10:00:00Z', status: 'maturing',  settled_at: null },
+  { escrow_id: 'ESC-002', subscriber: 'rPjU...9Kx', amount: 100_000, finish_after: '2026-03-07T09:55:00Z', status: 'settled',   settled_at: '2026-03-07T09:55:42Z' },
+  { escrow_id: 'ESC-003', subscriber: 'rPjU...9Kx', amount: 100_000, finish_after: '2026-03-07T09:50:00Z', status: 'settled',   settled_at: '2026-03-07T09:50:38Z' },
+  { escrow_id: 'ESC-004', subscriber: 'rQZc...5Wt', amount: 500_000, finish_after: '2026-03-07T14:00:00Z', status: 'maturing',  settled_at: null },
+  { escrow_id: 'ESC-005', subscriber: 'rUa2...bNq', amount: 250_000, finish_after: '2026-03-07T18:00:00Z', status: 'maturing',  settled_at: null },
+  { escrow_id: 'ESC-006', subscriber: 'rLb9...3Po', amount: 1_000_000, finish_after: '2026-03-08T00:00:00Z', status: 'maturing', settled_at: null },
+  { escrow_id: 'ESC-007', subscriber: 'rHx8...2Xl', amount: 750_000, finish_after: '2026-03-08T10:00:00Z', status: 'maturing',  settled_at: null },
 ]
 
 export const mockEvents = [
-  { id: '1', time: '10:46:12', type: 'TRANSFER',      amount: '500,000',   account: 'rPjU...9Kx' },
-  { id: '2', time: '10:45:02', type: 'ESCROW_FINISH',  amount: '1,200,000', account: 'rQZc...5Wt' },
-  { id: '3', time: '10:44:18', type: 'PAYMENT',        amount: '10,000',    account: 'rLb9...3Po' },
-  { id: '4', time: '10:41:05', type: 'TRANSFER',       amount: '25,000',    account: 'rPjU...9Kx' },
-  { id: '5', time: '10:39:55', type: 'ESCROW_CREATE',  amount: '100,000',   account: 'rUa2...bNq' },
-  { id: '6', time: '10:35:10', type: 'TRUST_SET',      amount: '-',         account: 'rHx8...2Xl' },
-  { id: '7', time: '10:30:22', type: 'PAYMENT',        amount: '5,500',     account: 'rTq9...1Cz' },
-  { id: '8', time: '10:28:44', type: 'TRANSFER',       amount: '80,000',    account: 'rMv7...4Hj' },
+  { id: '1', time: '10:47:30', type: 'SUBSCRIPTION',  amount: '75000',    account: 'rFund...MMF', direction: 'SUB' },
+  { id: '2', time: '10:46:12', type: 'ESCROW_CREATE', amount: '500000',   account: 'rPjU...9Kx',  direction: 'SUB' },
+  { id: '3', time: '10:45:02', type: 'ESCROW_FINISH', amount: '1200000',  account: 'rQZc...5Wt',  direction: 'CLR' },
+  { id: '4', time: '10:44:18', type: 'SUBSCRIPTION',  amount: '10000',    account: 'rFund...MMF', direction: 'SUB' },
+  { id: '5', time: '10:43:01', type: 'REDEMPTION',    amount: '25000',    account: 'rPjU...9Kx',  direction: 'RDM' },
+  { id: '6', time: '10:39:55', type: 'ESCROW_CREATE', amount: '100000',   account: 'rUa2...bNq',  direction: 'SUB' },
+  { id: '7', time: '10:35:10', type: 'TRUST_SET',     amount: '-',        account: 'rHx8...2Xl',  direction: '—'   },
+  { id: '8', time: '10:30:22', type: 'REDEMPTION',    amount: '5500',     account: 'rLb9...3Po',  direction: 'RDM' },
+  { id: '9', time: '10:28:44', type: 'ESCROW_FINISH', amount: '80000',    account: 'rMv7...4Hj',  direction: 'CLR' },
 ]

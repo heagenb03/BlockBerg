@@ -39,12 +39,22 @@ async def lifespan(app: FastAPI):
     import asyncio
 
     logger.info("Initializing XRPL connection and state...")
+    settler_task = None
     try:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, xrpl_client.initialize)
+        # Start escrow settler — finishes matured escrows every 60s
+        settler_task = asyncio.create_task(xrpl_client.run_escrow_settler())
+        logger.info("Escrow settler task started.")
     except Exception:
         logger.exception("XRPL initialization failed — XRPL endpoints will return 503.")
     yield
+    if settler_task:
+        settler_task.cancel()
+        try:
+            await settler_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="MMF Terminal API", lifespan=lifespan)
@@ -96,6 +106,7 @@ def events() -> list:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
+
 @app.get("/api/xrpl/escrow")
 def escrow() -> list:
     """Active Token Escrow positions (T+1 settlement simulation)."""
@@ -104,6 +115,7 @@ def escrow() -> list:
     except Exception as exc:
         logger.exception("Error fetching escrow positions")
         raise HTTPException(status_code=503, detail=str(exc)) from exc
+
 
 
 # ---------------------------------------------------------------------------

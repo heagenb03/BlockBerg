@@ -1,13 +1,25 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { mockFunds } from '../lib/mockData.js'
+import { PanelCommandLine } from './PanelCommandLine.jsx'
+import {
+  usePanelFontSize,
+  panelRootStyle, panelHeaderStyle, panelTitleStyle, panelSubtitleStyle,
+  panelFooterStyle, colHeaderStyle, dataFontSize,
+  COLOR_GREEN, COLOR_AMBER, COLOR_RED, TEXT_WHITE, TEXT_MUTED, TEXT_PRIMARY,
+} from '../lib/panelTheme.js'
 
 export function FundCard({ funds, selectedTicker, onSelectTicker }) {
   const [sortCol, setSortCol] = useState('tvl')
   const [sortDir, setSortDir] = useState('desc')
 
-  const fundList = funds && funds.length > 0 ? funds : mockFunds
+  const allFunds = funds && funds.length > 0 ? funds : mockFunds
+  const [watchlist, setWatchlist] = useState(allFunds)
 
-  const sorted = [...fundList].sort((a, b) => {
+  const containerRef = useRef(null)
+  const fontSize = usePanelFontSize(containerRef)
+  const df = dataFontSize(fontSize)
+
+  const sorted = [...watchlist].sort((a, b) => {
     const av = a[sortCol], bv = b[sortCol]
     if (av < bv) return sortDir === 'asc' ? -1 : 1
     if (av > bv) return sortDir === 'asc' ? 1 : -1
@@ -23,77 +35,109 @@ export function FundCard({ funds, selectedTicker, onSelectTicker }) {
     }
   }
 
+  const handleCommand = (cmd) => {
+    const parts = cmd.split(/\s+/)
+    const op = parts[0]
+    const ticker = parts[1]
+
+    if (!ticker) return 'USAGE: ADD <TICKER> or DEL <TICKER>'
+
+    if (op === 'ADD') {
+      if (watchlist.some((f) => f.ticker === ticker)) return `${ticker} ALREADY IN MONITOR`
+      const known = allFunds.find((f) => f.ticker === ticker)
+      const entry = known ?? { ticker, name: 'UNKNOWN FUND', tvl: 0, yld: 0, chg: 0, vol: 0 }
+      setWatchlist((prev) => [...prev, entry])
+      return `ADDED ${ticker}`
+    }
+
+    if (op === 'DEL') {
+      if (!watchlist.some((f) => f.ticker === ticker)) return `${ticker} NOT FOUND`
+      setWatchlist((prev) => prev.filter((f) => f.ticker !== ticker))
+      return `REMOVED ${ticker}`
+    }
+
+    return `UNKNOWN CMD: ${op}`
+  }
+
   const SortIndicator = ({ col }) =>
     sortCol === col ? (
-      <span className="text-[#FFC107]">{sortDir === 'asc' ? ' ▲' : ' ▼'}</span>
+      <span style={{ color: COLOR_AMBER }}>{sortDir === 'asc' ? ' ▲' : ' ▼'}</span>
     ) : null
 
+  const chStyle = colHeaderStyle(fontSize)
+
   return (
-    <div className="bg-[#0B0F14] border border-[#1E2530] h-full flex flex-col font-sans">
-      <div className="flex items-center justify-between p-1.5 border-b border-[#1E2530] bg-[#11161D]">
-        <h2 className="text-[#FFFFFF] font-semibold text-[11px] tracking-wider uppercase flex items-center gap-2">
-          MONITOR <span className="text-[#9AA4B2] font-mono">&lt;GO&gt;</span>
-        </h2>
+    <div ref={containerRef} style={panelRootStyle()}>
+      {/* Header */}
+      <div style={panelHeaderStyle()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${fontSize * 0.35}px ${fontSize * 0.9}px` }}>
+          <h2 style={panelTitleStyle(fontSize)}>
+            MONITOR{' '}
+            <span style={panelSubtitleStyle(fontSize)}>WATCHLIST</span>
+          </h2>
+          <span style={{ ...chStyle, color: TEXT_MUTED }}>ADD · DEL</span>
+        </div>
+        <PanelCommandLine onCommand={handleCommand} placeholder="ADD WTGXX  or  DEL BUIDL" />
       </div>
 
-      <div className="flex-1 overflow-auto scrollbar-hide">
-        <table className="w-full text-left border-collapse whitespace-nowrap">
-          <thead className="sticky top-0 bg-[#11161D] z-10 border-b border-[#1E2530]">
+      {/* Table */}
+      <div style={{ flex: 1, overflowY: 'auto' }} className="scrollbar-hide">
+        <table style={{ width: '100%', borderCollapse: 'collapse', whiteSpace: 'nowrap' }}>
+          <thead style={{ position: 'sticky', top: 0, backgroundColor: '#0B0F14', zIndex: 10, borderBottom: '1px solid #1E2530' }}>
             <tr>
-              <th
-                className="py-1 px-2 text-[#9AA4B2] text-[10px] uppercase cursor-pointer hover:text-[#E6EDF3] select-none"
-                onClick={() => handleSort('ticker')}
-              >
-                Ticker<SortIndicator col="ticker" />
-              </th>
-              <th
-                className="py-1 px-2 text-[#9AA4B2] text-[10px] uppercase cursor-pointer hover:text-[#E6EDF3] text-right select-none"
-                onClick={() => handleSort('yld')}
-              >
-                Yld%<SortIndicator col="yld" />
-              </th>
-              <th
-                className="py-1 px-2 text-[#9AA4B2] text-[10px] uppercase cursor-pointer hover:text-[#E6EDF3] text-right select-none"
-                onClick={() => handleSort('chg')}
-              >
-                Chg<SortIndicator col="chg" />
-              </th>
-              <th
-                className="py-1 px-2 text-[#9AA4B2] text-[10px] uppercase cursor-pointer hover:text-[#E6EDF3] text-right select-none"
-                onClick={() => handleSort('tvl')}
-              >
-                TVL(M)<SortIndicator col="tvl" />
-              </th>
+              {[
+                { col: 'ticker', label: 'Ticker', align: 'left' },
+                { col: 'yld',    label: 'Yld%',   align: 'right' },
+                { col: 'chg',    label: 'Chg',    align: 'right' },
+                { col: 'tvl',    label: 'TVL(M)', align: 'right' },
+              ].map(({ col, label, align }) => (
+                <th
+                  key={col}
+                  onClick={() => handleSort(col)}
+                  style={{ ...chStyle, padding: `${fontSize * 0.4}px ${fontSize * 0.9}px`, textAlign: align, cursor: 'pointer', userSelect: 'none' }}
+                  onMouseEnter={(e) => e.currentTarget.style.color = TEXT_PRIMARY}
+                  onMouseLeave={(e) => e.currentTarget.style.color = chStyle.color}
+                >
+                  {label}<SortIndicator col={col} />
+                </th>
+              ))}
             </tr>
           </thead>
-          <tbody className="font-mono text-[11px]">
+          <tbody>
             {sorted.map((fund) => {
-              const isSelected = selectedTicker === fund.ticker
+              const isNull = fund.yld === 0 && fund.tvl === 0
               const isPos = fund.chg >= 0
               return (
                 <tr
                   key={fund.ticker}
-                  className={`cursor-pointer border-b border-[#1E2530]/30 hover:bg-[#1E2530] transition-colors ${isSelected ? 'bg-[#FFFFFF]/10' : ''}`}
                   onClick={() => onSelectTicker(fund.ticker)}
+                  style={{ cursor: 'pointer', borderBottom: '1px solid rgba(30,37,48,0.3)', fontSize: df }}
+                  onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1E2530'}
+                  onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                 >
-                  <td className={`py-1.5 px-2 font-bold ${isSelected ? 'text-[#FFFFFF]' : 'text-[#E6EDF3]'}`}>
+                  <td style={{ padding: `${fontSize * 0.5}px ${fontSize * 0.9}px`, color: isNull ? TEXT_MUTED : TEXT_PRIMARY, fontWeight: 700 }}>
                     {fund.ticker}
-                    {isSelected && <span className="ml-1 text-[#FFC107]">◀</span>}
                   </td>
-                  <td className="py-1.5 px-2 text-right text-[#E6EDF3]">
-                    {fund.yld.toFixed(2)}
+                  <td style={{ padding: `${fontSize * 0.5}px ${fontSize * 0.9}px`, color: TEXT_PRIMARY, textAlign: 'right' }}>
+                    {isNull ? '--' : fund.yld.toFixed(2)}
                   </td>
-                  <td className={`py-1.5 px-2 text-right ${isPos ? 'text-[#00C853]' : 'text-[#FF5252]'}`}>
-                    {isPos ? '+' : ''}{fund.chg.toFixed(2)}
+                  <td style={{ padding: `${fontSize * 0.5}px ${fontSize * 0.9}px`, color: isNull ? TEXT_MUTED : isPos ? COLOR_GREEN : COLOR_RED, textAlign: 'right' }}>
+                    {isNull ? '--' : `${isPos ? '+' : ''}${fund.chg.toFixed(2)}`}
                   </td>
-                  <td className="py-1.5 px-2 text-right text-[#E6EDF3]">
-                    {fund.tvl.toFixed(1)}
+                  <td style={{ padding: `${fontSize * 0.5}px ${fontSize * 0.9}px`, color: TEXT_PRIMARY, textAlign: 'right' }}>
+                    {isNull ? '--' : fund.tvl.toFixed(1)}
                   </td>
                 </tr>
               )
             })}
           </tbody>
         </table>
+      </div>
+
+      {/* Footer */}
+      <div style={panelFooterStyle(fontSize)}>
+        <span>RWAPIPE · RWA.XYZ</span>
+        <span>MON WATCHLIST</span>
       </div>
     </div>
   )
