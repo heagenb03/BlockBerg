@@ -1,14 +1,20 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { mockAnomalies } from '../lib/mockData.js'
 import { PanelCommandLine } from './PanelCommandLine.jsx'
+import {
+  usePanelFontSize,
+  panelRootStyle, panelHeaderStyle, panelTitleStyle,
+  colHeaderStyle, dataFontSize,
+  BORDER, TEXT_WHITE, TEXT_MUTED, TEXT_PRIMARY, COLOR_RED, COLOR_AMBER,
+} from '../lib/panelTheme.js'
 
 const LIVE_TICKER = 'MMFXX'
 
-function getSeverityStyle(severity) {
+function getSeverityColor(severity) {
   switch (severity) {
-    case 'Critical': return { msgColor: 'text-[#FF5252]' }
-    case 'Warning':  return { msgColor: 'text-[#FFC107]' }
-    default:         return { msgColor: 'text-[#9AA4B2]' }
+    case 'Critical': return COLOR_RED
+    case 'Warning':  return COLOR_AMBER
+    default:         return TEXT_MUTED
   }
 }
 
@@ -23,6 +29,10 @@ function formatTime(ts) {
 export function AlertFeed({ anomalies, selectedTicker, onTickerChange }) {
   const [localTicker, setLocalTicker] = useState(selectedTicker ?? LIVE_TICKER)
   const [selectedAlert, setSelectedAlert] = useState(null)
+  const containerRef = useRef(null)
+  const fontSize = usePanelFontSize(containerRef)
+  const df = dataFontSize(fontSize)
+  const chStyle = colHeaderStyle(fontSize)
 
   useEffect(() => {
     if (selectedTicker) setLocalTicker(selectedTicker)
@@ -47,16 +57,19 @@ export function AlertFeed({ anomalies, selectedTicker, onTickerChange }) {
   }
 
   return (
-    <div className="bg-[#000000] border border-[#1E2530] h-full flex flex-col font-mono">
-      <div className="border-b border-[#1E2530] bg-[#11161D] flex flex-col">
-        <div className="flex justify-between items-center p-1.5">
-          <h2 className="text-[#FFFFFF] font-semibold text-[11px] tracking-wider uppercase">
+    <div ref={containerRef} style={{ ...panelRootStyle(), fontFamily: 'monospace' }}>
+      {/* Header */}
+      <div style={panelHeaderStyle()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: `${fontSize * 0.35}px ${fontSize * 0.9}px` }}>
+          <h2 style={panelTitleStyle(fontSize)}>
             {localTicker} ALERTS
           </h2>
           {selectedAlert && (
             <button
               onClick={() => setSelectedAlert(null)}
-              className="text-[#9AA4B2]/50 text-[10px] hover:text-[#9AA4B2] tracking-wider uppercase transition-colors"
+              style={{ color: 'rgba(154,164,178,0.5)', fontSize: chStyle.fontSize, fontFamily: 'monospace', letterSpacing: '0.1em', textTransform: 'uppercase', background: 'none', border: 'none', cursor: 'pointer' }}
+              onMouseEnter={(e) => e.currentTarget.style.color = TEXT_MUTED}
+              onMouseLeave={(e) => e.currentTarget.style.color = 'rgba(154,164,178,0.5)'}
             >
               CLR
             </button>
@@ -67,23 +80,34 @@ export function AlertFeed({ anomalies, selectedTicker, onTickerChange }) {
 
       {hasData ? (
         <>
-          <div className="flex-1 overflow-y-auto scrollbar-hide">
+          {/* Alert list */}
+          <div style={{ flex: 1, overflowY: 'auto' }} className="scrollbar-hide">
             {alerts.map((alert, i) => {
-              const style = getSeverityStyle(alert.severity)
+              const color = getSeverityColor(alert.severity)
               const isSelected = selectedAlert?._idx === i
               return (
                 <div
                   key={i}
                   onClick={() => handleRowClick(alert, i)}
-                  className={`flex items-baseline justify-between gap-2 px-1.5 py-[3px] cursor-pointer transition-colors ${
-                    isSelected ? 'bg-[#1E2530]' : 'hover:bg-[#1E2530]/60'
-                  }`}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'baseline',
+                    justifyContent: 'space-between',
+                    gap: fontSize * 0.5,
+                    padding: `${fontSize * 0.22}px ${fontSize * 0.9}px`,
+                    cursor: 'pointer',
+                    backgroundColor: isSelected ? '#1E2530' : 'transparent',
+                    transition: 'background-color 0.15s',
+                    fontSize: df,
+                  }}
+                  onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'rgba(30,37,48,0.6)' }}
+                  onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.backgroundColor = 'transparent' }}
                 >
-                  <p className={`text-[11px] leading-tight flex-1 min-w-0 truncate ${style.msgColor}`}>
-                    <span className="text-[#FFFFFF] font-bold">{alert.severity.toUpperCase()}:</span>
+                  <p style={{ color, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.4 }}>
+                    <span style={{ color: TEXT_WHITE, fontWeight: 700 }}>{alert.severity.toUpperCase()}:</span>
                     {' '}{alert.description}
                   </p>
-                  <span className="text-[#9AA4B2]/70 text-[10px] shrink-0">
+                  <span style={{ color: 'rgba(154,164,178,0.7)', fontSize: chStyle.fontSize, flexShrink: 0 }}>
                     {formatTime(alert.timestamp)}
                   </span>
                 </div>
@@ -92,39 +116,37 @@ export function AlertFeed({ anomalies, selectedTicker, onTickerChange }) {
           </div>
 
           {/* Detail tray */}
-          <div className="border-t border-[#1E2530] bg-[#0B0F14] h-[72px] shrink-0 flex flex-col justify-center px-2 py-1.5">
+          <div style={{ borderTop: `1px solid ${BORDER}`, background: '#0B0F14', minHeight: fontSize * 6, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: `${fontSize * 0.5}px ${fontSize * 0.9}px` }}>
             {selectedAlert ? (() => {
-              const style = getSeverityStyle(selectedAlert.severity)
+              const color = getSeverityColor(selectedAlert.severity)
               return (
                 <>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={`text-[10px] font-bold tracking-widest uppercase ${style.msgColor}`}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: fontSize * 0.35 }}>
+                    <span style={{ color, fontSize: chStyle.fontSize, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
                       {selectedAlert.severity}
                     </span>
-                    <span className="text-[#9AA4B2]/60 text-[10px]">
+                    <span style={{ color: 'rgba(154,164,178,0.6)', fontSize: chStyle.fontSize }}>
                       {formatTime(selectedAlert.timestamp)}
                     </span>
                   </div>
-                  <p className="text-[#E6EDF3] text-[11px] leading-snug break-words line-clamp-3">
+                  <p style={{ color: TEXT_PRIMARY, fontSize: df, lineHeight: 1.45, display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
                     {selectedAlert.description}
                   </p>
                 </>
               )
             })() : (
-              <span className="text-[#1E2530] text-[10px] tracking-widest uppercase self-center">
+              <span style={{ color: '#1E2530', fontSize: chStyle.fontSize, letterSpacing: '0.1em', textTransform: 'uppercase', textAlign: 'center' }}>
                 SELECT ALERT TO EXPAND
               </span>
             )}
           </div>
         </>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
-          <span className="text-[#9AA4B2] text-[11px] tracking-widest">{localTicker}</span>
-          <span className="text-[#1E2530] text-[28px] font-bold tracking-wider">N/A</span>
-          <span className="text-[#9AA4B2]/50 text-[10px] uppercase tracking-wider">
-            NO ALERT DATA AVAILABLE
-          </span>
-          <span className="text-[#9AA4B2]/30 text-[9px] mt-1">
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: fontSize * 0.5, textAlign: 'center' }}>
+          <span style={{ color: TEXT_MUTED, fontSize: df, letterSpacing: '0.1em' }}>{localTicker}</span>
+          <span style={{ color: '#1E2530', fontSize: df * 2.5, fontWeight: 700, letterSpacing: '0.1em' }}>N/A</span>
+          <span style={{ color: 'rgba(154,164,178,0.5)', fontSize: chStyle.fontSize, textTransform: 'uppercase', letterSpacing: '0.08em' }}>NO ALERT DATA AVAILABLE</span>
+          <span style={{ color: 'rgba(154,164,178,0.3)', fontSize: chStyle.fontSize * 0.9, marginTop: fontSize * 0.3 }}>
             TYPE  GO {LIVE_TICKER}  TO RESTORE
           </span>
         </div>

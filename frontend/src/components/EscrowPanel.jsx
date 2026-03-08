@@ -1,12 +1,16 @@
-import React, { useState, useEffect } from 'react'
-import { Lock } from 'lucide-react'
+import React, { useState, useEffect, useRef } from 'react'
 import { mockEscrow } from '../lib/mockData.js'
 import { PanelCommandLine } from './PanelCommandLine.jsx'
+import {
+  usePanelFontSize,
+  panelRootStyle, panelHeaderStyle, panelTitleStyle, panelSubtitleStyle,
+  panelFooterStyle, colHeaderStyle, dataFontSize,
+  TEXT_WHITE, TEXT_MUTED, TEXT_PRIMARY, COLOR_GREEN, COLOR_AMBER, COLOR_BLUE,
+} from '../lib/panelTheme.js'
 
 const LIVE_TICKER = 'MMFXX'
 
 function formatEscrowId(id) {
-  // "rABCDEFG...XYZ:12345" → "...XYZ:12345"
   const [addr, seq] = id.split(':')
   if (!addr || !seq) return id
   return `…${addr.slice(-6)}:${seq}`
@@ -20,10 +24,10 @@ function formatSettledAt(iso) {
   if (!iso) return '—'
   try {
     const d = new Date(iso)
-    const mo = String(d.getUTCMonth() + 1).padStart(2, '0')
+    const mo  = String(d.getUTCMonth() + 1).padStart(2, '0')
     const day = String(d.getUTCDate()).padStart(2, '0')
-    const hh = String(d.getUTCHours()).padStart(2, '0')
-    const mm = String(d.getUTCMinutes()).padStart(2, '0')
+    const hh  = String(d.getUTCHours()).padStart(2, '0')
+    const mm  = String(d.getUTCMinutes()).padStart(2, '0')
     return `${mo}/${day} ${hh}:${mm}`
   } catch {
     return '—'
@@ -44,17 +48,21 @@ function formatFinishAfter(ts) {
   }
 }
 
-function getStatusStyle(status) {
+function getStatusColor(status) {
   switch (status) {
-    case 'maturing': return 'text-[#FFC107]'
-    case 'finished': return 'text-[#00C853]'
-    case 'settled':  return 'text-[#42A5F5]'
-    default:         return 'text-[#9AA4B2]'
+    case 'maturing': return COLOR_AMBER
+    case 'finished': return COLOR_GREEN
+    case 'settled':  return COLOR_BLUE
+    default:         return TEXT_MUTED
   }
 }
 
 export function EscrowPanel({ selectedTicker, escrow, onTickerChange }) {
   const [localTicker, setLocalTicker] = useState(selectedTicker)
+  const containerRef = useRef(null)
+  const fontSize = usePanelFontSize(containerRef)
+  const df = dataFontSize(fontSize)
+  const chStyle = colHeaderStyle(fontSize)
 
   useEffect(() => {
     setLocalTicker(selectedTicker)
@@ -62,7 +70,6 @@ export function EscrowPanel({ selectedTicker, escrow, onTickerChange }) {
 
   const hasData = localTicker === LIVE_TICKER
   const positions = hasData ? (escrow?.length ? escrow : mockEscrow) : []
-  const totalLocked = positions.reduce((s, e) => s + e.amount, 0)
 
   const handleCommand = (cmd) => {
     const parts = cmd.split(/\s+/)
@@ -74,12 +81,23 @@ export function EscrowPanel({ selectedTicker, escrow, onTickerChange }) {
     return `UNKNOWN CMD: ${parts[0]}`
   }
 
+  // Column layout: [ID 22%, Amount 20%, Settle 18%, Settled At 24%, Status 16%]
+  const cols = [
+    { label: 'ID',         w: '22%', align: 'left'  },
+    { label: 'Amount',     w: '20%', align: 'right' },
+    { label: 'Settle',     w: '18%', align: 'right' },
+    { label: 'Settled At', w: '24%', align: 'right' },
+    { label: 'Status',     w: '16%', align: 'right' },
+  ]
+
   return (
-    <div className="bg-[#0B0F14] border border-[#1E2530] h-full flex flex-col font-sans">
-      <div className="border-b border-[#1E2530] bg-[#11161D] flex flex-col">
-        <div className="flex items-center justify-between p-1.5">
-          <h2 className="text-[#FFFFFF] font-semibold text-[11px] tracking-wider uppercase">
-            {localTicker} ESCROW
+    <div ref={containerRef} style={panelRootStyle()}>
+      {/* Header */}
+      <div style={panelHeaderStyle()}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${fontSize * 0.35}px ${fontSize * 0.9}px` }}>
+          <h2 style={panelTitleStyle(fontSize)}>
+            {localTicker}{' '}
+            <span style={panelSubtitleStyle(fontSize)}>ESCROW</span>
           </h2>
         </div>
         <PanelCommandLine onCommand={handleCommand} placeholder="GO MMFXX" />
@@ -87,38 +105,43 @@ export function EscrowPanel({ selectedTicker, escrow, onTickerChange }) {
 
       {hasData ? (
         <>
-          <div className="flex items-center justify-between px-2 py-1 bg-[#11161D]/60 border-b border-[#1E2530]/50 text-[10px] font-mono">
-            <div className="flex items-center gap-1 text-[#9AA4B2]">
-              <Lock className="w-2.5 h-2.5" />
-              <span>LOCKED</span>
-            </div>
-            <span className="text-[#FFC107] font-bold">{formatAmount(totalLocked)} {localTicker}</span>
-            <span className="text-[#9AA4B2]">T+1 SETTLE</span>
+          {/* Column headers */}
+          <div style={{ display: 'flex', fontFamily: 'monospace', padding: `${fontSize * 0.35}px ${fontSize * 0.9}px`, background: '#0B0F14', borderBottom: `1px solid #1E2530`, flexShrink: 0 }}>
+            {cols.map((col) => (
+              <div key={col.label} style={{ ...chStyle, width: col.w, textAlign: col.align, flexShrink: 0 }}>
+                {col.label}
+              </div>
+            ))}
           </div>
 
-          <div className="flex text-[10px] font-mono text-[#9AA4B2] uppercase px-2 py-1 bg-[#11161D] border-b border-[#1E2530]">
-            <div className="w-[22%]">ID</div>
-            <div className="w-[20%] text-right">Amount</div>
-            <div className="w-[18%] text-right">Settle</div>
-            <div className="w-[24%] text-right">Settled At</div>
-            <div className="w-[16%] text-right">Status</div>
-          </div>
-
-          <div className="flex-1 overflow-y-auto scrollbar-hide divide-y divide-[#1E2530]/30 font-mono text-[11px]">
+          {/* Rows */}
+          <div style={{ flex: 1, overflowY: 'auto' }} className="scrollbar-hide">
             {positions.map((pos, i) => (
               <div
                 key={pos.escrow_id}
-                className={`flex items-center px-2 py-1.5 hover:bg-[#1E2530] transition-colors cursor-pointer ${i % 2 === 0 ? '' : 'bg-[#11161D]/20'}`}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: `${fontSize * 0.4}px ${fontSize * 0.9}px`,
+                  fontFamily: 'monospace',
+                  fontSize: df,
+                  backgroundColor: i % 2 === 0 ? 'transparent' : 'rgba(17,22,29,0.2)',
+                  borderBottom: `1px solid rgba(30,37,48,0.3)`,
+                  cursor: 'pointer',
+                  transition: 'background-color 0.15s',
+                }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#1E2530'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = i % 2 === 0 ? 'transparent' : 'rgba(17,22,29,0.2)'}
               >
-                <div className="w-[22%] text-[#E6EDF3]">{formatEscrowId(pos.escrow_id)}</div>
-                <div className="w-[20%] text-right text-[#FFFFFF]">{formatAmount(pos.amount)}</div>
-                <div className="w-[18%] text-right text-[#9AA4B2]">
+                <div style={{ width: '22%', color: TEXT_PRIMARY, flexShrink: 0 }}>{formatEscrowId(pos.escrow_id)}</div>
+                <div style={{ width: '20%', color: TEXT_WHITE, textAlign: 'right', flexShrink: 0 }}>{formatAmount(pos.amount)}</div>
+                <div style={{ width: '18%', color: TEXT_MUTED, textAlign: 'right', flexShrink: 0 }}>
                   {pos.status === 'settled' ? 'SETTLED' : formatFinishAfter(pos.finish_after)}
                 </div>
-                <div className="w-[24%] text-right text-[#9AA4B2]">
+                <div style={{ width: '24%', color: TEXT_MUTED, textAlign: 'right', flexShrink: 0 }}>
                   {formatSettledAt(pos.settled_at)}
                 </div>
-                <div className={`w-[16%] text-right font-bold uppercase text-[9px] ${getStatusStyle(pos.status)}`}>
+                <div style={{ width: '16%', color: getStatusColor(pos.status), textAlign: 'right', fontWeight: 700, fontSize: chStyle.fontSize, textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
                   {pos.status}
                 </div>
               </div>
@@ -126,19 +149,18 @@ export function EscrowPanel({ selectedTicker, escrow, onTickerChange }) {
           </div>
         </>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
-          <span className="text-[#9AA4B2] font-mono text-[11px] tracking-widest">{localTicker}</span>
-          <span className="text-[#1E2530] font-mono text-[28px] font-bold tracking-wider">N/A</span>
-          <span className="text-[#9AA4B2]/50 font-mono text-[10px] uppercase tracking-wider">
-            NO ESCROW DATA AVAILABLE
-          </span>
-          <span className="text-[#9AA4B2]/30 font-mono text-[9px] mt-1">
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: fontSize * 0.5, textAlign: 'center', fontFamily: 'monospace' }}>
+          <span style={{ color: TEXT_MUTED, fontSize: df, letterSpacing: '0.1em' }}>{localTicker}</span>
+          <span style={{ color: '#1E2530', fontSize: df * 2.5, fontWeight: 700, letterSpacing: '0.1em' }}>N/A</span>
+          <span style={{ color: 'rgba(154,164,178,0.5)', fontSize: chStyle.fontSize, textTransform: 'uppercase', letterSpacing: '0.08em' }}>NO ESCROW DATA AVAILABLE</span>
+          <span style={{ color: 'rgba(154,164,178,0.3)', fontSize: chStyle.fontSize * 0.9, marginTop: fontSize * 0.3 }}>
             TYPE  GO {LIVE_TICKER}  TO RESTORE
           </span>
         </div>
       )}
 
-      <div className="px-2 py-1 border-t border-[#1E2530] bg-[#11161D]/60 text-[9px] font-mono text-[#9AA4B2] flex justify-between">
+      {/* Footer */}
+      <div style={panelFooterStyle(fontSize)}>
         <span>XLS-85 MPT Escrow</span>
         <span>Mainnet: 2026-02-12</span>
       </div>

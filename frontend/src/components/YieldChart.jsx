@@ -1,10 +1,16 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceDot,
 } from 'recharts'
 import { mockYieldForecast } from '../lib/mockData.js'
 import { PanelCommandLine } from './PanelCommandLine.jsx'
+import {
+  usePanelFontSize,
+  panelRootStyle, panelHeaderStyle, panelTitleStyle,
+  colHeaderStyle, dataFontSize,
+  YIELD_BG, BORDER, TEXT_MUTED, TEXT_PRIMARY, COLOR_RED,
+} from '../lib/panelTheme.js'
 
 const LIVE_TICKER = 'MMFXX'
 const TICKER_COLORS = ['#FFFFFF', '#4FC3F7', '#00C853', '#CE93D8', '#FFB74D', '#F48FB1']
@@ -13,15 +19,16 @@ function getColor(index) {
   return TICKER_COLORS[index % TICKER_COLORS.length]
 }
 
-function CustomTooltip({ active, payload, label }) {
+function CustomTooltip({ active, payload, label, fontSize }) {
   if (!active || !payload?.length) return null
+  const fs = fontSize ?? 11
   return (
-    <div className="bg-[#11161D] border border-[#1E2530] p-3 shadow-lg font-sans text-xs">
-      <p className="text-[#9AA4B2] mb-2 font-mono">{label}</p>
+    <div style={{ background: '#11161D', border: `1px solid ${BORDER}`, padding: `${fs * 0.7}px ${fs}px`, fontFamily: 'monospace', fontSize: fs }}>
+      <p style={{ color: TEXT_MUTED, marginBottom: fs * 0.4 }}>{label}</p>
       {payload.map((entry, i) => (
-        <div key={i} className="flex justify-between items-center gap-4">
+        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: fs * 2 }}>
           <span style={{ color: entry.color }}>{entry.name}:</span>
-          <span className="text-[#E6EDF3] font-mono font-medium">{entry.value.toFixed(2)}%</span>
+          <span style={{ color: TEXT_PRIMARY, fontWeight: 500 }}>{entry.value.toFixed(2)}%</span>
         </div>
       ))}
     </div>
@@ -30,13 +37,15 @@ function CustomTooltip({ active, payload, label }) {
 
 export function YieldChart({ yieldForecast }) {
   const [activeTickers, setActiveTickers] = useState([LIVE_TICKER])
+  const containerRef = useRef(null)
+  const fontSize = usePanelFontSize(containerRef)
+  const df = dataFontSize(fontSize)
 
   const getTickerData = (ticker) => {
     if (ticker === LIVE_TICKER) return yieldForecast?.data ?? mockYieldForecast.data
     return []
   }
 
-  // Build merged chart data using MMFXX time axis as base
   const baseData = activeTickers.reduce((best, t) => {
     const d = getTickerData(t)
     return d.length > best.length ? d : best
@@ -87,11 +96,14 @@ export function YieldChart({ yieldForecast }) {
       ? activeTickers.join(' · ')
       : `${activeTickers.slice(0, 3).join(' · ')} +${activeTickers.length - 3}`
 
+  const chStyle = colHeaderStyle(fontSize)
+
   return (
-    <div className="bg-[#000000] border border-[#1E2530] h-full flex flex-col font-sans">
-      <div className="border-b border-[#1E2530] bg-[#11161D] flex flex-col">
-        <div className="flex justify-between items-center p-1.5">
-          <h2 className="text-[#FFFFFF] font-semibold text-[11px] tracking-wider uppercase">
+    <div ref={containerRef} style={{ ...panelRootStyle(YIELD_BG) }}>
+      {/* Header */}
+      <div style={panelHeaderStyle()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: `${fontSize * 0.35}px ${fontSize * 0.9}px` }}>
+          <h2 style={panelTitleStyle(fontSize)}>
             {titleTickers} YIELD FRCST
           </h2>
         </div>
@@ -100,29 +112,29 @@ export function YieldChart({ yieldForecast }) {
 
       {hasAnyData ? (
         <>
-          <div className="flex-1 p-2 pb-0 min-h-[150px]">
+          <div style={{ flex: 1, padding: `${fontSize * 0.5}px ${fontSize * 0.5}px 0`, minHeight: 150 }}>
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1E2530" vertical={false} />
                 <XAxis
                   dataKey="time"
-                  stroke="#9AA4B2"
-                  fontSize={10}
+                  stroke={TEXT_MUTED}
+                  fontSize={df * 0.9}
                   tickLine={false}
                   axisLine={false}
-                  tick={{ fontFamily: 'monospace', fill: '#9AA4B2' }}
+                  tick={{ fontFamily: 'monospace', fill: TEXT_MUTED }}
                   dy={8}
                 />
                 <YAxis
-                  stroke="#9AA4B2"
-                  fontSize={10}
+                  stroke={TEXT_MUTED}
+                  fontSize={df * 0.9}
                   tickLine={false}
                   axisLine={false}
                   domain={['auto', 'auto']}
-                  tick={{ fontFamily: 'monospace', fill: '#9AA4B2' }}
+                  tick={{ fontFamily: 'monospace', fill: TEXT_MUTED }}
                   tickFormatter={(v) => `${v}%`}
                 />
-                <Tooltip content={<CustomTooltip />} />
+                <Tooltip content={<CustomTooltip fontSize={df} />} />
                 {tickersWithData.map((ticker, i) => (
                   <React.Fragment key={ticker}>
                     <Line
@@ -153,8 +165,8 @@ export function YieldChart({ yieldForecast }) {
                   chartData.flatMap((entry, j) =>
                     entry[`anomaly_${ticker}`] && entry[`actual_${ticker}`] !== undefined
                       ? [
-                          <ReferenceDot key={`ao-${ticker}-${j}`} x={entry.time} y={entry[`actual_${ticker}`]} r={8} fill="#FF5252" stroke="none" fillOpacity={0.35} />,
-                          <ReferenceDot key={`ac-${ticker}-${j}`} x={entry.time} y={entry[`actual_${ticker}`]} r={3} fill="#FF5252" stroke="#11161D" strokeWidth={2} />,
+                          <ReferenceDot key={`ao-${ticker}-${j}`} x={entry.time} y={entry[`actual_${ticker}`]} r={8} fill={COLOR_RED} stroke="none" fillOpacity={0.35} />,
+                          <ReferenceDot key={`ac-${ticker}-${j}`} x={entry.time} y={entry[`actual_${ticker}`]} r={3} fill={COLOR_RED} stroke="#11161D" strokeWidth={2} />,
                         ]
                       : []
                   )
@@ -163,41 +175,36 @@ export function YieldChart({ yieldForecast }) {
             </ResponsiveContainer>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-2 py-1.5 bg-[#11161D] border-t border-[#1E2530]">
+          {/* Legend footer */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: `${fontSize * 0.5}px ${fontSize}px`, padding: `${fontSize * 0.45}px ${fontSize * 0.9}px`, background: '#11161D', borderTop: `1px solid ${BORDER}`, flexShrink: 0 }}>
             {activeTickers.map((ticker, i) => {
               const hasData = tickersWithData.includes(ticker)
               const color = getColor(tickersWithData.indexOf(ticker))
               return (
-                <div key={ticker} className="flex items-center gap-1.5 text-[10px] font-mono uppercase">
-                  <div className="w-3 h-px" style={{ backgroundColor: hasData ? color : '#9AA4B2' }} />
-                  <span className={hasData ? 'text-[#9AA4B2]' : 'text-[#9AA4B2]/30'}>
+                <div key={ticker} style={{ display: 'flex', alignItems: 'center', gap: fontSize * 0.4, fontFamily: 'monospace', fontSize: chStyle.fontSize, textTransform: 'uppercase' }}>
+                  <div style={{ width: fontSize, height: 1, backgroundColor: hasData ? color : TEXT_MUTED, flexShrink: 0 }} />
+                  <span style={{ color: hasData ? TEXT_MUTED : 'rgba(154,164,178,0.3)' }}>
                     {ticker}{!hasData && ' N/A'}
                   </span>
                 </div>
               )
             })}
-            <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase">
-              <div className="w-3 h-px" style={{ borderTop: '1px dashed #9AA4B2', opacity: 0.4 }} />
-              <span className="text-[#9AA4B2]/50">ML Pred</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: fontSize * 0.4, fontFamily: 'monospace', fontSize: chStyle.fontSize, textTransform: 'uppercase' }}>
+              <div style={{ width: fontSize, height: 0, borderTop: '1px dashed rgba(154,164,178,0.4)' }} />
+              <span style={{ color: 'rgba(154,164,178,0.5)' }}>ML Pred</span>
             </div>
-            <div className="flex items-center gap-1.5 text-[10px] font-mono uppercase">
-              <div className="w-2 h-2 rounded-full bg-[#FF5252]" />
-              <span className="text-[#9AA4B2]">Anomaly</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: fontSize * 0.4, fontFamily: 'monospace', fontSize: chStyle.fontSize, textTransform: 'uppercase' }}>
+              <div style={{ width: fontSize * 0.7, height: fontSize * 0.7, borderRadius: '50%', backgroundColor: COLOR_RED, flexShrink: 0 }} />
+              <span style={{ color: TEXT_MUTED }}>Anomaly</span>
             </div>
           </div>
         </>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-center">
-          <span className="text-[#9AA4B2] font-mono text-[11px] tracking-widest">
-            {activeTickers.join(' · ')}
-          </span>
-          <span className="text-[#1E2530] font-mono text-[28px] font-bold tracking-wider">N/A</span>
-          <span className="text-[#9AA4B2]/50 font-mono text-[10px] uppercase tracking-wider">
-            NO YIELD DATA AVAILABLE
-          </span>
-          <span className="text-[#9AA4B2]/30 font-mono text-[9px] mt-1">
-            TYPE  ADD {LIVE_TICKER}  TO SEE DATA
-          </span>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: fontSize * 0.5, textAlign: 'center', fontFamily: 'monospace' }}>
+          <span style={{ color: TEXT_MUTED, fontSize: df, letterSpacing: '0.1em' }}>{activeTickers.join(' · ')}</span>
+          <span style={{ color: '#1E2530', fontSize: df * 2.5, fontWeight: 700, letterSpacing: '0.1em' }}>N/A</span>
+          <span style={{ color: 'rgba(154,164,178,0.5)', fontSize: chStyle.fontSize, textTransform: 'uppercase', letterSpacing: '0.08em' }}>NO YIELD DATA AVAILABLE</span>
+          <span style={{ color: 'rgba(154,164,178,0.3)', fontSize: chStyle.fontSize * 0.9, marginTop: fontSize * 0.3 }}>TYPE  ADD {LIVE_TICKER}  TO SEE DATA</span>
         </div>
       )}
     </div>
