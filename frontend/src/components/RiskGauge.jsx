@@ -6,7 +6,7 @@ import {
   panelFooterStyle, colHeaderStyle,
 } from '../lib/panelTheme.js'
 
-const MAX_TICKERS = 3
+const MAX_TICKERS = 10
 
 // Column definitions: flex weight determines proportional width
 const COLS = [
