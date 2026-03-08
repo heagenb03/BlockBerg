@@ -1,16 +1,4 @@
-"""
-XRPL client: wallet setup, MPT issuance, Token Escrow, and API data functions.
-
-On first startup, generates two Testnet wallets (fund + subscriber) via faucet,
-issues an MPT with tfMPTCanTransfer|tfMPTCanEscrow, and creates 4 staggered
-escrow positions to populate the EscrowPanel. All state is persisted to
-state.json so restarts reuse the same wallets/token/escrows.
-
-Delete state.json to start fresh (re-issues everything).
-"""
-
 from __future__ import annotations
-
 import asyncio
 import itertools
 import json
@@ -22,7 +10,6 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-
 from xrpl.clients import JsonRpcClient
 from xrpl.models.requests import AccountTx
 from xrpl.models.amounts import MPTAmount
@@ -36,16 +23,15 @@ logger = logging.getLogger(__name__)
 TESTNET_URL = "https://s.altnet.rippletest.net:51234"
 STATE_FILE = Path(__file__).parent / "state.json"
 
-# Seconds between Unix epoch (1970) and Ripple epoch (2000-01-01)
 RIPPLE_EPOCH = 946684800
 
 # MPTokenIssuanceCreate flags (from xrpl-py MPTokenIssuanceCreateFlag enum)
 TF_MPT_CAN_TRANSFER = MPTokenIssuanceCreateFlag.TF_MPT_CAN_TRANSFER  # 0x20
 TF_MPT_CAN_ESCROW = MPTokenIssuanceCreateFlag.TF_MPT_CAN_ESCROW      # 0x08
 
-INITIAL_SUPPLY = 10_000_000  # 10M fund tokens
-NAV_PER_TOKEN = 1.00         # MMF NAV always $1
-SIMULATED_YIELD_7D = 4.85    # placeholder until ML yield model is wired
+INITIAL_SUPPLY = 10_000_000 
+NAV_PER_TOKEN = 1.00
+SIMULATED_YIELD_7D = 4.85
 
 # XLS-89 metadata as hex-encoded JSON
 _METADATA_JSON = json.dumps(

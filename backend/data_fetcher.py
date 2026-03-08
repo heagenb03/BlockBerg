@@ -1,22 +1,8 @@
-"""
-data_fetcher.py — Real MMF data ingestion for the MMF Terminal.
-
-Data sources (priority order):
-  1. rwapipe.com /tokens?category=money-market — live TVL per fund
-  2. rwa.xyz CSV (data/rawxyz_*.csv)           — daily TVL snapshot fallback
-  3. Hardcoded metadata                         — yield, KYC, min_investment, network_count
-
-APY is always hardcoded (rwapipe returns null; rwa.xyz paywalls yield data).
-MMFXX TVL is always sourced from xrpl_client ($10M synthetic fund).
-"""
-
 from __future__ import annotations
-
 import csv
 import logging
 from pathlib import Path
 from typing import Any
-
 import requests
 
 logger = logging.getLogger(__name__)
@@ -28,10 +14,7 @@ _DEFILLAMA_CSV = next(_DATA_DIR.glob("defillamma_rwa-*.csv"), None)
 RWAPIPE_BASE = "https://rwapipe.com/api"
 RWAPIPE_TIMEOUT = 10
 
-# ---------------------------------------------------------------------------
-# Fund metadata
 # yield_apy: rwa.xyz 7-day APY column, sourced 2026-03-07
-# ---------------------------------------------------------------------------
 
 _FUND_META: dict[str, dict] = {
     "BUIDL": {
@@ -93,10 +76,6 @@ _FUND_META: dict[str, dict] = {
 FUND_TICKERS = ["MMFXX", "BUIDL", "USYC", "USDY", "BENJI", "WTGXX"]
 
 
-# ---------------------------------------------------------------------------
-# CSV helpers
-# ---------------------------------------------------------------------------
-
 def _load_rwa_csv() -> list[dict]:
     """Load rwa.xyz CSV rows. Returns [] on missing file."""
     if not _RWA_CSV or not _RWA_CSV.exists():
@@ -133,9 +112,7 @@ def _prev_tvl_m(rows: list[dict], col: str) -> float | None:
     return None
 
 
-# ---------------------------------------------------------------------------
-# rwapipe.com helpers
-# ---------------------------------------------------------------------------
+# RWAPIPE
 
 def _rwapipe_money_market_tvl() -> dict[str, float]:
     """
@@ -161,10 +138,7 @@ def _rwapipe_money_market_tvl() -> dict[str, float]:
         logger.warning("rwapipe.com unavailable: %s", exc)
         return {}
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
+# API
 
 def get_fund_list() -> list[dict[str, Any]]:
     """

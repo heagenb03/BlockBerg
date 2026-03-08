@@ -1,29 +1,16 @@
-"""
-MMF Terminal — FastAPI backend.
-
-Startup:
-    uvicorn main:app --reload
-
-Routes:
-    GET /api/xrpl/fund          → fund metrics (MPT supply, NAV, yield, TVL)
-    GET /api/xrpl/events        → recent XRPL transactions
-    GET /api/xrpl/escrow        → active Token Escrow positions
-
-    GET /api/ml/yield-forecast  → yield time series + ML forecast overlay
-    GET /api/ml/anomalies       → anomaly detection alerts
-    GET /api/ml/risk-scores     → per-fund risk scores (0–100)
-"""
-
 from __future__ import annotations
-
 import logging
 from contextlib import asynccontextmanager
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-
 import xrpl_client
-
+import asyncio
+import math
+import time
+from data_fetcher import get_fund_list
+from _ml_anomalies import get_anomalies
+from _ml_yield import get_yield_forecast
+from _ml_risk import get_risk_scores
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -36,8 +23,6 @@ async def lifespan(app: FastAPI):
     raises RuntimeError when called from a running event loop (FastAPI/uvicorn).
     Running initialize() in a thread pool executor gives it its own event loop.
     """
-    import asyncio
-
     logger.info("Initializing XRPL connection and state...")
     settler_task = None
     try:
@@ -75,7 +60,6 @@ app.add_middleware(
 def fund_list() -> list:
     """Watchlist of real MMFs + MMFXX synthetic fund for the FundCard panel."""
     try:
-        from data_fetcher import get_fund_list
         return get_fund_list()
     except Exception as exc:
         logger.exception("Error fetching fund list")
@@ -131,7 +115,6 @@ def yield_forecast() -> dict:
     Falls back to synthetic data when no CSV files are available.
     """
     try:
-        from _ml_yield import get_yield_forecast
         return get_yield_forecast()
     except Exception:
         logger.warning("ML yield forecast unavailable, returning synthetic data.")
@@ -142,30 +125,20 @@ def yield_forecast() -> dict:
 def anomalies() -> list:
     """Anomaly detection alerts from the XRPL event stream."""
     try:
-        from _ml_anomalies import get_anomalies
         return get_anomalies()
     except Exception:
-        logger.warning("ML anomaly detector unavailable, returning synthetic data.")
-        return _synthetic_anomalies()
+        logger.warning("ML anomaly detector unavailable")
+        return []
 
 
 @app.get("/api/ml/risk-scores")
 def risk_scores() -> list:
     """Per-fund risk scores (0–100) from weighted composite model."""
     try:
-        from _ml_risk import get_risk_scores
         return get_risk_scores()
     except Exception:
-        logger.warning("ML risk scorer unavailable, returning synthetic data.")
-        return _synthetic_risk_scores()
-
-
-# ---------------------------------------------------------------------------
-# Synthetic fallbacks (used when ML CSV data is not yet loaded)
-# ---------------------------------------------------------------------------
-
-import math
-import time
+        logger.warning("ML risk scores unavailable")
+        return []
 
 
 def _synthetic_yield_forecast() -> dict:
@@ -205,71 +178,3 @@ def _synthetic_yield_forecast() -> dict:
             }
         )
     return {"data": data}
-
-
-def _synthetic_anomalies() -> list:
-    now = int(time.time())
-    return [
-        {
-            "timestamp": (now - 3600) * 1000,
-            "type": "Settlement Delay",
-            "severity": "Critical",
-            "description": "Transfer latency 4.2σ above rolling mean — escrow batch delayed.",
-        },
-        {
-            "timestamp": (now - 7200) * 1000,
-            "type": "Volume Spike",
-            "severity": "Warning",
-            "description": "Transfer volume 2.8σ above 7d average — unusual redemption activity.",
-        },
-        {
-            "timestamp": (now - 14400) * 1000,
-            "type": "Low Liquidity",
-            "severity": "Info",
-            "description": "Net outflow exceeded 5% of TVL in 1hr window.",
-        },
-    ]
-
-
-def _synthetic_risk_scores() -> list:
-    return [
-        {
-            "fund_id": "MMFXX",
-            "score": 28,
-            "nw_stress": 24,
-            "vol_index": 31,
-            "components": {
-                "yield_volatility": 0.12,
-                "tvl_size": 10_000_000,
-                "kyc_required": True,
-                "min_investment": 100_000,
-                "network_count": 1,
-            },
-        },
-        {
-            "fund_id": "BUIDL",
-            "score": 19,
-            "nw_stress": 15,
-            "vol_index": 22,
-            "components": {
-                "yield_volatility": 0.08,
-                "tvl_size": 520_000_000,
-                "kyc_required": True,
-                "min_investment": 5_000_000,
-                "network_count": 5,
-            },
-        },
-        {
-            "fund_id": "USDY",
-            "score": 44,
-            "nw_stress": 51,
-            "vol_index": 38,
-            "components": {
-                "yield_volatility": 0.21,
-                "tvl_size": 75_000_000,
-                "kyc_required": False,
-                "min_investment": 500,
-                "network_count": 3,
-            },
-        },
-    ]
