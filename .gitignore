@@ -1,5 +1,6 @@
-#DOCS
+# Claude
 CLAUDE.md
+.claude/
 
 # XRPL wallet seeds and on-chain state — contains private keys, never commit
 backend/state.json
