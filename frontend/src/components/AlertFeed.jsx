@@ -4,7 +4,7 @@ import { PanelCommandLine } from './PanelCommandLine.jsx'
 import {
   usePanelFontSize,
   panelRootStyle, panelHeaderStyle, panelTitleStyle, panelSubtitleStyle,
-  colHeaderStyle, dataFontSize,
+  colHeaderStyle, dataFontSize, formatTime,
   BORDER, TEXT_WHITE, TEXT_MUTED, TEXT_PRIMARY, COLOR_RED, COLOR_AMBER,
 } from '../lib/panelTheme.js'
 
@@ -18,13 +18,6 @@ function getSeverityColor(severity) {
   }
 }
 
-function formatTime(ts) {
-  try {
-    return new Date(ts).toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  } catch {
-    return ts
-  }
-}
 
 export function AlertFeed({ anomalies, selectedTicker, onTickerChange }) {
   const [localTicker, setLocalTicker] = useState(selectedTicker ?? LIVE_TICKER)

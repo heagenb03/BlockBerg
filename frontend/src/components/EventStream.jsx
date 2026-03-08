@@ -4,11 +4,12 @@ import { PanelCommandLine } from './PanelCommandLine.jsx'
 import {
   usePanelFontSize,
   panelRootStyle, panelHeaderStyle, panelTitleStyle, panelSubtitleStyle,
-  panelFooterStyle, colHeaderStyle, dataFontSize,
+  panelFooterStyle, colHeaderStyle, dataFontSize, formatTime,
   TEXT_WHITE, TEXT_MUTED, TEXT_PRIMARY, COLOR_GREEN,
 } from '../lib/panelTheme.js'
 
 const LIVE_TICKER = 'MMFXX'
+
 
 // Column definitions: flex weight determines proportional width
 const COLS = [
@@ -65,7 +66,7 @@ function EventRow({ event, fontSize, isOdd, panelWidth }) {
       onMouseLeave={() => setHovered(false)}
     >
       <span style={{ ...cellBase, flex: COLS[0].flex, color: TEXT_MUTED }}>
-        {event.time}
+        {formatTime(event.time)}
       </span>
       <span style={{ ...cellBase, flex: COLS[1].flex, fontWeight: 700 }}>
         {typeMeta.glyph && (
