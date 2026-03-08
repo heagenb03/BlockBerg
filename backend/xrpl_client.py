@@ -19,6 +19,7 @@ import os
 import random
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -648,10 +649,9 @@ _TX_TYPE_MAP = {
 
 
 def _fmt_time(ripple_date: int) -> str:
-    """Format a Ripple epoch timestamp as HH:MM:SS for the EventStream table."""
+    """Format a Ripple epoch timestamp as ISO 8601 UTC string for the EventStream table."""
     unix_ts = (ripple_date or 0) + RIPPLE_EPOCH
-    t = time.gmtime(unix_ts)
-    return f"{t.tm_hour:02d}:{t.tm_min:02d}:{t.tm_sec:02d}"
+    return datetime.fromtimestamp(unix_ts, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _extract_amount(raw: Any) -> str:

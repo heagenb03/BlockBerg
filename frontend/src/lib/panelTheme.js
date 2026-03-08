@@ -116,3 +116,10 @@ export function panelFooterStyle(fontSize) {
 export function dataFontSize(fontSize) {
   return Math.max(9, fontSize * 0.95)
 }
+
+/** Format an ISO 8601 timestamp (or bare HH:MM:SS string) to browser-local HH:MM:SS */
+export function formatTime(ts) {
+  const d = new Date(ts)
+  if (isNaN(d.getTime())) return ts
+  return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+}
