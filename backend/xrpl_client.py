@@ -72,6 +72,11 @@ SETTLER_INTERVAL_RANGE = (45, 75)  # seconds
 FINISH_DELAY_RANGE = (30, 90)      # seconds of visible "finished" state before on-chain settle
 MAX_ESCROW_ENTRIES = 15
 
+# Sell / redemption event constants (paired: fund→subscriber then subscriber→fund)
+SELL_CHANCE = 0.25                 # 25% per settler cycle
+SELL_COUNT_RANGE = (1, 2)          # 1-2 sell pairs per trigger
+SELL_AMOUNT_RANGE = (25_000, 100_000)  # below 125k anomaly threshold
+
 # Escrow positions created on startup for demo (staggered finish times)
 _ESCROW_CONFIGS = [
     {"amount": "100000",  "label": "Demo (5min)",    "hours": 0.0833},  # 5 min — full lifecycle visible live
@@ -457,6 +462,7 @@ def _maybe_recreate_demo_escrow() -> None:
 
 
 _burst_counter: itertools.count = itertools.count(1)  # thread-safe label counter
+_sell_counter: itertools.count = itertools.count(1)   # thread-safe sell event counter
 
 
 def _maybe_create_burst_escrows() -> None:
@@ -518,6 +524,35 @@ def _maybe_create_burst_escrows() -> None:
             logger.warning("Burst escrow creation failed (%s): %s", label, exc)
 
 
+def _maybe_create_sell_events() -> None:
+    """25% chance per settler cycle to create 1-2 standalone redemption events.
+
+    Models investors independently redeeming MMF tokens (subscriber → fund).
+    Appears as REDEMPTION ▼ in the EventStream. Fails gracefully if the
+    subscriber wallet has insufficient balance — the burst escrow funding cycle
+    replenishes it regularly enough for most sells to succeed.
+    """
+    if random.random() > SELL_CHANCE:
+        return
+
+    count = random.randint(*SELL_COUNT_RANGE)
+    client = _new_client()
+
+    for _ in range(count):
+        amount = random.randint(*SELL_AMOUNT_RANGE)
+        n = next(_sell_counter)
+        try:
+            sell_tx = Payment(
+                account=_subscriber_wallet.classic_address,
+                destination=_fund_wallet.classic_address,
+                amount=MPTAmount(mpt_issuance_id=_mpt_issuance_id, value=str(amount)),
+            )
+            submit_and_wait(sell_tx, client, _subscriber_wallet)
+            logger.info("Redemption event %d: %d tokens", n, amount)
+        except Exception as exc:
+            logger.warning("Sell event %d failed: %s", n, exc)
+
+
 def _settle_and_refresh() -> None:
     """Blocking: finish expired escrows and recreate demo escrow if needed. Run in executor."""
     settled = _finish_expired_escrows()
@@ -525,6 +560,7 @@ def _settle_and_refresh() -> None:
         logger.info("Escrow settler: settled %d escrow(s).", settled)
     _maybe_recreate_demo_escrow()
     _maybe_create_burst_escrows()
+    _maybe_create_sell_events()
 
 
 async def run_escrow_settler() -> None:
@@ -630,6 +666,28 @@ def _extract_amount(raw: Any) -> str:
     return val if val else "-"
 
 
+def _lookup_escrow_amount(offer_sequence: int | None) -> str:
+    """Look up the token amount for an escrow by its OfferSequence.
+
+    EscrowFinish carries no Amount field — it references the original EscrowCreate
+    via OfferSequence (== that tx's Sequence number). We resolve the amount from
+    the in-memory _escrow_positions list, which stores sequence + amount at creation.
+    Returns the amount string if found, "-" otherwise.
+    """
+    if offer_sequence is None:
+        return "-"
+    try:
+        seq_int = int(offer_sequence)
+    except (ValueError, TypeError):
+        return "-"
+    with _escrow_lock:
+        for e in _escrow_positions:
+            if e.get("sequence") == seq_int:
+                return str(e.get("amount", "-"))
+    logger.debug("No escrow found for OfferSequence %s", offer_sequence)
+    return "-"
+
+
 def _classify_event(
     tx_type: str, account: str, destination: str, fund_addr: str, sub_addr: str
 ) -> tuple[str, str]:
@@ -700,12 +758,22 @@ def get_events() -> list[dict[str, Any]]:
         account = tx.get("Account", "")
         destination = tx.get("Destination", "")
         direction, label = _classify_event(tx_type, account, destination, fund_addr, sub_addr)
+
+        # EscrowFinish has no Amount field on-chain — resolve via OfferSequence lookup
+        if label == "ESCROW_FINISH":
+            offer_seq = tx.get("OfferSequence")
+            if offer_seq is None:
+                offer_seq = tx.get("offer_sequence")
+            amount = _lookup_escrow_amount(offer_seq)
+        else:
+            amount = _extract_amount(tx.get("Amount") or tx.get("DeliverMax") or "-")
+
         result.append(
             {
                 "id": (tx.get("hash") or "")[:16],
                 "time": _fmt_time(tx.get("date", 0)),
                 "type": label,
-                "amount": _extract_amount(tx.get("Amount") or tx.get("DeliverMax") or "-"),
+                "amount": amount,
                 "account": account,
                 "direction": direction,
             }
