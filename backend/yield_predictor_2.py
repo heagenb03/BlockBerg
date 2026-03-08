@@ -33,11 +33,11 @@ def clean_timeseries(timeseries):
     print(f"len of timeseries: {len(timeseries)}")
     if len(timeseries) <= 20:
         # return the same timeseries as the return in try, but remove the '%' character in every value 
-        print(f"timeseries: {timeseries}")
+        #print(f"timeseries: {timeseries}")
         timeseries = [x.replace('%', '') if len(str(x)) >= 4 else x for x in timeseries]
-        print(f"timeseries: {timeseries}")
+        #print(f"timeseries: {timeseries}")
         new_timeseries = [float(x) for x in timeseries if x != '' and x != 'nan' and not pd.isna(x)]
-        print(f"new_timeseries: {new_timeseries}")
+        #print(f"new_timeseries: {new_timeseries}")
         return new_timeseries
     try:
         return [float(x) for x in timeseries if x != '' and x != 'nan' and not pd.isna(x) and type(x) == float]
@@ -49,21 +49,28 @@ def clean_timeseries(timeseries):
 
 
 
-def create_and_clean_timeseries(timeseries_df, num_days):
+def create_and_clean_timeseries(timeseries_df, num_days, indices, names):
+
     timeseries_list = []
-    kept_column_names = []  # same order as timeseries_list (only tokens with >= num_days)
+    # Holds the indices of the tokens and token names that have enough data and are in the names list
+    counter_list = []
+    name_list = []
+    # Extract all days of yield timeseries for every token in yield_timeseries
+    counter = 0
     for token in timeseries_df.columns:
         cleaned_timeseries = clean_timeseries(timeseries_df[token].tolist())
         if len(cleaned_timeseries) < num_days:
             print(f"Token {token} has less than {num_days} days of data, skipping")
             continue
         timeseries_list.append(cleaned_timeseries[-num_days:])
-        kept_column_names.append(token)
+        if token in names:
+            counter_list.append(counter)
+        # name_list.append(names[counter])
+        counter += 1
+    return timeseries_list, counter_list, names
 
-    return timeseries_list, kept_column_names
 
-
-def get_all_timeseries_data(token_timeseries, num_days):
+def get_all_timeseries_data(token_timeseries, num_days, indices, names):
     """
     Extract and clean the last 365 days of data for five treasury token columns.
 
@@ -87,12 +94,12 @@ def get_all_timeseries_data(token_timeseries, num_days):
     all_timeseries_data_extended = []
     all_timeseries_data_appended = []
 
-    timeseries_list, kept_column_names = create_and_clean_timeseries(token_timeseries, num_days)
+    timeseries_list, counter_list, name_list = create_and_clean_timeseries(token_timeseries, num_days, indices, names)
     for timeseries in timeseries_list:
         all_timeseries_data_extended.extend(timeseries)
         all_timeseries_data_appended.append(timeseries)
 
-    return all_timeseries_data_extended, all_timeseries_data_appended, kept_column_names
+    return all_timeseries_data_extended, all_timeseries_data_appended, counter_list, name_list
 
 
 def scale_timeseries(all_timeseries_data_extended, all_timeseries_data_appended):
@@ -133,7 +140,6 @@ def scale_timeseries(all_timeseries_data_extended, all_timeseries_data_appended)
 
 
 def get_train_test_data(all_scaled_timeseries_data_appended, timeseries_scaler, indices, names):
-    # indices: positions in all_scaled_timeseries_data_appended (filtered list), not original column indices
     not_in_indices = [i for i in range(len(all_scaled_timeseries_data_appended)) if i not in indices]
     """
     Split scaled data into train (first 4 tokens) and test (5th token).
@@ -154,12 +160,12 @@ def get_train_test_data(all_scaled_timeseries_data_appended, timeseries_scaler, 
     # These tokens are the ones we want to predict in both the token and yield pipelines
     # BlackRock BUIDL, Circle USYC, Ondo U.S. Dollar Yield, Franklin OnChain, WisdomTree Gov MMF
 
-    train = [all_scaled_timeseries_data_appended[i] for i in indices]   # training tokens
-    test = [all_scaled_timeseries_data_appended[i] for i in not_in_indices]   # predicting tokens
+    train = [all_scaled_timeseries_data_appended[i] for i in not_in_indices]   # training tokens
+    test = [all_scaled_timeseries_data_appended[i] for i in indices]   # predicting tokens
     # For each series: X = all steps except last, y = last step (next-value prediction)
     X_train = np.array([indv_train[:-3] for indv_train in train])
     y_train = np.array([indv_train[-3:] for indv_train in train])
-    X_test = np.array([indv_test[:-3] for indv_test in test])
+    X_test = np.array([indv_test[3:] for indv_test in test]) # Changed from [:-3] to [3:] to get the last 3 days of data for the predicting tokens
     y_test = np.array([indv_test[-3:] for indv_test in test])
     unscaled_y_test = np.array([timeseries_scaler.inverse_transform(t) for t in y_test])
     return X_train, y_train, X_test, y_test, unscaled_y_test
@@ -187,7 +193,7 @@ def build_model(X_train, y_train):
     model.fit(X_train, y_train, epochs=100, batch_size=32)
     return model
 
-def make_predictions(model, X_test, y_test, unscaled_y_test, timeseries_scaler):
+def make_predictions(model, X_test, y_test, unscaled_y_test, timeseries_scaler, names):
     """
     Run the model on test data and inverse-scale predictions to original units.
 
@@ -203,12 +209,13 @@ def make_predictions(model, X_test, y_test, unscaled_y_test, timeseries_scaler):
     Returns:
         np.ndarray: Predictions in original value scale.
     """
+    print(f"X_test: {X_test}")
+    #print(f"y_test: {y_test}")
+    print(f"unscaled_y_test: {unscaled_y_test}")
     predictions = model.predict(X_test)
     predictions = timeseries_scaler.inverse_transform(predictions)
-    print(f"predictions: {predictions}")
-    print(f"y_test: {y_test}")
-    print(f"unscaled_y_test: {unscaled_y_test}")
-
+    for i, prediction in enumerate(predictions):
+        print(f"Index {names[i]} predictions (Next 3 Days): {prediction}")
     return predictions
 
 def main_pipeline(days_of_data, timeseries_df, indices, names):
@@ -224,18 +231,13 @@ def main_pipeline(days_of_data, timeseries_df, indices, names):
     '''response = requests.get("https://rwapipe.com/api/market", timeout=30.0)
     treasury_tokens = rwapipe_client.get_treasury_tokens_from_market()'''
 
-    # Extract last x days per token, in extended and appended layouts (only tokens with >= days_of_data)
-    all_timeseries_data_extended, all_timeseries_data_appended, kept_column_names = get_all_timeseries_data(timeseries_df, days_of_data)
-    # Map target token names to positions in the *filtered* list (0 to len(kept)-1), not original column indices
-    missing = [n for n in names if n not in kept_column_names]
-    if missing:
-        raise ValueError(f"Target token(s) not in filtered data (need >={days_of_data} days): {missing}")
-    filtered_indices = [kept_column_names.index(name) for name in names]
+    # Extract last x days per token, in extended and appended layouts
+    all_timeseries_data_extended, all_timeseries_data_appended, cleaned_indices_list, cleaned_name_list = get_all_timeseries_data(timeseries_df, days_of_data, indices, names)
     # get the last x days of data for the indices
     # Commented out two lines below because the indices should only be used for X and y training/testing, not for scaling
     # all_timeseries_data_extended = [all_timeseries_data_extended[i] for i in indices]
     # all_timeseries_data_appended = [all_timeseries_data_appended[i] for i in indices]
-
+    
     # get the names of the tokens
     # WHy are we even doing this? 
     # names = [names[i] for i in indices]
@@ -245,13 +247,26 @@ def main_pipeline(days_of_data, timeseries_df, indices, names):
         all_timeseries_data_extended, all_timeseries_data_appended
     )
 
-    # Train/test split using positions in the filtered token list
+    # Calculate the indices of the tokens in the all_scaled_timeseries_data_appended
+
+    print(f"all columns: {timeseries_df.columns.tolist()}")
+    print(f"cleaned_indices_list: {cleaned_indices_list}")
+    print(f"cleaned_name_list: {cleaned_name_list}")
+
+    # Train on first 4 tokens, test on 5th; X = all but last step, y = last step
     X_train, y_train, X_test, y_test, unscaled_y_test = get_train_test_data(
-        all_scaled_timeseries_data_appended, timeseries_scaler, filtered_indices, names
+        all_scaled_timeseries_data_appended, timeseries_scaler, cleaned_indices_list, cleaned_name_list
     )
 
+    print(f"X_train shape: {X_train.shape}")
+    print(f"y_train shape: {y_train.shape}")
+    print(f"X_test shape: {X_test.shape}")
+    print(f"y_test shape: {y_test.shape}")
+    print(f"unscaled_y_test shape: {unscaled_y_test.shape}")
+    # return
+
     model = build_model(X_train, y_train)
-    predictions = make_predictions(model, X_test, y_test, unscaled_y_test, timeseries_scaler)
+    predictions = make_predictions(model, X_test, y_test, unscaled_y_test, timeseries_scaler, names)
 
     return predictions
 
@@ -282,10 +297,18 @@ def main():
     print("\nRunning token pipeline...")
     token_predictions = main_pipeline(365, token_timeseries, token_indices, token_names)
     print("\nRunning yield pipeline...")
-    yield_predictions = main_pipeline(10, yield_timeseries, yield_indices, yield_names)
+    yield_predictions = main_pipeline(7, yield_timeseries, yield_indices, yield_names)
 
     #print(f"token_predictions: {token_predictions}")
     #print(f"yield_predictions: {yield_predictions}")
+
+    # RETURNED PREDICTIONS FORMAT
+    # token predictions = [[token_1_prediction_day_1, token_1_prediction_day_2, token_1_prediction_day_3], [token_2_prediction_day_1, token_2_prediction_day_2, token_2_prediction_day_3], [token_3_prediction_day_1, token_3_prediction_day_2, token_3_prediction_day_3], [token_4_prediction_day_1, token_4_prediction_day_2, token_4_prediction_day_3], [token_5_prediction_day_1, token_5_prediction_day_2, token_5_prediction_day_3]]
+    # yield predictions = [[yield_1_prediction_day_1, yield_1_prediction_day_2, yield_1_prediction_day_3], [yield_2_prediction_day_1, yield_2_prediction_day_2, yield_2_prediction_day_3], [yield_3_prediction_day_1, yield_3_prediction_day_2, yield_3_prediction_day_3], [yield_4_prediction_day_1, yield_4_prediction_day_2, yield_4_prediction_day_3], [yield_5_prediction_day_1, yield_5_prediction_day_2, yield_5_prediction_day_3]]
+
+    # Arrays inside of main prediction list, along with the main list for each prediction array, may (probably) be numpy arrays (for both token and yield predictions)
+
+    return token_predictions, yield_predictions
 
 
 if __name__ == "__main__":
