@@ -7,7 +7,7 @@ import { mockYieldForecast } from '../lib/mockData.js'
 import { PanelCommandLine } from './PanelCommandLine.jsx'
 import {
   usePanelFontSize,
-  panelRootStyle, panelHeaderStyle, panelTitleStyle,
+  panelRootStyle, panelHeaderStyle, panelTitleStyle, panelSubtitleStyle,
   colHeaderStyle, dataFontSize,
   YIELD_BG, BORDER, TEXT_MUTED, TEXT_PRIMARY, COLOR_RED,
 } from '../lib/panelTheme.js'
@@ -104,7 +104,8 @@ export function YieldChart({ yieldForecast }) {
       <div style={panelHeaderStyle()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: `${fontSize * 0.35}px ${fontSize * 0.9}px` }}>
           <h2 style={panelTitleStyle(fontSize)}>
-            {titleTickers} YIELD FRCST
+            {titleTickers}{' '}
+            <span style={panelSubtitleStyle(fontSize)}>YIELD FORECAST</span>
           </h2>
         </div>
         <PanelCommandLine onCommand={handleCommand} placeholder="ADD BUIDL  or  DEL MMFXX" />

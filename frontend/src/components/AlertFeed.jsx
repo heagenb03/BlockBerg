@@ -3,7 +3,7 @@ import { mockAnomalies } from '../lib/mockData.js'
 import { PanelCommandLine } from './PanelCommandLine.jsx'
 import {
   usePanelFontSize,
-  panelRootStyle, panelHeaderStyle, panelTitleStyle,
+  panelRootStyle, panelHeaderStyle, panelTitleStyle, panelSubtitleStyle,
   colHeaderStyle, dataFontSize,
   BORDER, TEXT_WHITE, TEXT_MUTED, TEXT_PRIMARY, COLOR_RED, COLOR_AMBER,
 } from '../lib/panelTheme.js'
@@ -62,7 +62,8 @@ export function AlertFeed({ anomalies, selectedTicker, onTickerChange }) {
       <div style={panelHeaderStyle()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: `${fontSize * 0.35}px ${fontSize * 0.9}px` }}>
           <h2 style={panelTitleStyle(fontSize)}>
-            {localTicker} ALERTS
+            {localTicker}{' '}
+            <span style={panelSubtitleStyle(fontSize)}>ALERTS</span>
           </h2>
           {selectedAlert && (
             <button
