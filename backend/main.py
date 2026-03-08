@@ -9,7 +9,7 @@ import math
 import time
 from data_fetcher import get_fund_list
 from _ml_anomalies import get_anomalies
-from _ml_yield import get_yield_forecast
+from _ml_yield import get_yield_forecast, get_yield_forecast_for_ticker
 from _ml_risk import get_risk_scores
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -107,17 +107,23 @@ def escrow() -> list:
 # ---------------------------------------------------------------------------
 
 @app.get("/api/ml/yield-forecast")
-def yield_forecast() -> dict:
+def yield_forecast(ticker: str | None = None) -> dict:
     """
-    Yield time series with ML forecast overlay.
+    Yield time series with optional ML forecast overlay.
 
-    Returns actual yield data points plus ML-predicted forward values.
-    Falls back to synthetic data when no CSV files are available.
+    ?ticker= (optional): terminal ticker symbol (e.g. BUIDL, USYC, USDY).
+    Omit or pass MMFXX to get the default BUIDL actuals + LSTM predictions.
+    Any other known ticker returns historical actuals only (no ML line).
+    Falls back to synthetic data only when ticker is absent/MMFXX and CSV is unavailable.
     """
     try:
+        if ticker and ticker.upper() != "MMFXX":
+            return get_yield_forecast_for_ticker(ticker)
         return get_yield_forecast()
     except Exception:
         logger.warning("ML yield forecast unavailable, returning synthetic data.")
+        if ticker and ticker.upper() != "MMFXX":
+            return {"data": []}
         return _synthetic_yield_forecast()
 
 

@@ -5,15 +5,17 @@ Loads token price/time-series data from CSV, cleans and scales it, then trains
 an LSTM model to predict the next value for each token. Uses the last 365 days
 of data per token; first 4 tokens for training, 5th for testing.
 """
+import logging
 import requests
 import rwapipe_client
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import MinMaxScaler
-import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
+from keras.models import Sequential
+from keras.layers import LSTM, Dense
 from sklearn.preprocessing import StandardScaler
+
+logger = logging.getLogger(__name__)
 
 
 def clean_timeseries(timeseries):
@@ -30,7 +32,7 @@ def clean_timeseries(timeseries):
     Returns:
         List of float: only valid numeric values, in original order.
     """
-    print(f"len of timeseries: {len(timeseries)}")
+    logger.debug("len of timeseries: %d", len(timeseries))
     if len(timeseries) <= 20:
         # return the same timeseries as the return in try, but remove the '%' character in every value 
         #print(f"timeseries: {timeseries}")
@@ -42,7 +44,7 @@ def clean_timeseries(timeseries):
     try:
         return [float(x) for x in timeseries if x != '' and x != 'nan' and not pd.isna(x) and type(x) == float]
     except Exception as e:
-        print(f"Error cleaning timeseries: {e}. Skipping first row.")
+        logger.warning("Error cleaning timeseries: %s. Skipping first row.", e)
 
         return timeseries[1:]
 
@@ -60,7 +62,7 @@ def create_and_clean_timeseries(timeseries_df, num_days, indices, names):
     for token in timeseries_df.columns:
         cleaned_timeseries = clean_timeseries(timeseries_df[token].tolist())
         if len(cleaned_timeseries) < num_days:
-            print(f"Token {token} has less than {num_days} days of data, skipping")
+            logger.debug("Token %s has less than %d days of data, skipping", token, num_days)
             continue
         timeseries_list.append(cleaned_timeseries[-num_days:])
         if token in names:
@@ -209,13 +211,12 @@ def make_predictions(model, X_test, y_test, unscaled_y_test, timeseries_scaler, 
     Returns:
         np.ndarray: Predictions in original value scale.
     """
-    print(f"X_test: {X_test}")
-    #print(f"y_test: {y_test}")
-    print(f"unscaled_y_test: {unscaled_y_test}")
+    logger.debug("X_test: %s", X_test)
+    logger.debug("unscaled_y_test: %s", unscaled_y_test)
     predictions = model.predict(X_test)
     predictions = timeseries_scaler.inverse_transform(predictions)
     for i, prediction in enumerate(predictions):
-        print(f"Index {names[i]} predictions (Next 3 Days): {prediction}")
+        logger.debug("Index %s predictions (Next 3 Days): %s", names[i], prediction)
     return predictions
 
 def main_pipeline(days_of_data, timeseries_df, indices, names):
@@ -249,20 +250,20 @@ def main_pipeline(days_of_data, timeseries_df, indices, names):
 
     # Calculate the indices of the tokens in the all_scaled_timeseries_data_appended
 
-    print(f"all columns: {timeseries_df.columns.tolist()}")
-    print(f"cleaned_indices_list: {cleaned_indices_list}")
-    print(f"cleaned_name_list: {cleaned_name_list}")
+    logger.debug("all columns: %s", timeseries_df.columns.tolist())
+    logger.debug("cleaned_indices_list: %s", cleaned_indices_list)
+    logger.debug("cleaned_name_list: %s", cleaned_name_list)
 
     # Train on first 4 tokens, test on 5th; X = all but last step, y = last step
     X_train, y_train, X_test, y_test, unscaled_y_test = get_train_test_data(
         all_scaled_timeseries_data_appended, timeseries_scaler, cleaned_indices_list, cleaned_name_list
     )
 
-    print(f"X_train shape: {X_train.shape}")
-    print(f"y_train shape: {y_train.shape}")
-    print(f"X_test shape: {X_test.shape}")
-    print(f"y_test shape: {y_test.shape}")
-    print(f"unscaled_y_test shape: {unscaled_y_test.shape}")
+    logger.debug("X_train shape: %s", X_train.shape)
+    logger.debug("y_train shape: %s", y_train.shape)
+    logger.debug("X_test shape: %s", X_test.shape)
+    logger.debug("y_test shape: %s", y_test.shape)
+    logger.debug("unscaled_y_test shape: %s", unscaled_y_test.shape)
     # return
 
     model = build_model(X_train, y_train)

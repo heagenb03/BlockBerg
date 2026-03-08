@@ -49,6 +49,20 @@ _YIELD_NAMES: list[str] = [
     "WisdomTree Gov MMF",
 ]
 
+# Terminal ticker → CSV "Product" column name.
+# Supports both mockFunds tickers and common aliases.
+TICKER_TO_FUND: dict[str, str] = {
+    "MMFXX": "BlackRock BUIDL",   # synthetic XRPL fund proxied by BUIDL
+    "BUIDL": "BlackRock BUIDL",
+    "USYC":  "Circle USYC",
+    "USDY":  "Ondo U.S. Dollar Yield",
+    "ONDO":  "Ondo U.S. Dollar Yield",  # alias
+    "BENJI": "Franklin OnChain",
+    "FOBXX": "Franklin OnChain",        # alias
+    "WTGXX": "WisdomTree Gov MMF",
+    "WGOV":  "WisdomTree Gov MMF",      # alias
+}
+
 # ---------------------------------------------------------------------------
 # Module-level prediction cache
 # ---------------------------------------------------------------------------
@@ -242,6 +256,12 @@ def get_yield_forecast() -> dict:
         preds = _predictions_cache
 
     if preds:
+        # Bridge: set predicted on the last actual row so the solid actual line
+        # and dashed forecast line share one overlapping point — recharts with
+        # connectNulls=false would otherwise draw a visual gap between them.
+        last_actual_val = actuals[-1][1]
+        data[-1]["predicted"] = round(last_actual_val, 3)
+
         last_ts = actuals[-1][0]
         day_ms = 86_400_000
         for i, val in enumerate(preds, start=1):
@@ -254,6 +274,33 @@ def get_yield_forecast() -> dict:
                 }
             )
 
+    return {"data": data}
+
+
+def get_yield_forecast_for_ticker(ticker: str) -> dict:
+    """
+    Return historical yield actuals for any known ticker.
+
+    MMFXX delegates to get_yield_forecast() to include ML predictions.
+    All other tickers return actuals-only from the daily yields CSV.
+    Unknown tickers return {"data": []}.
+    """
+    upper = ticker.upper()
+    if upper == "MMFXX":
+        return get_yield_forecast()
+
+    fund = TICKER_TO_FUND.get(upper)
+    if fund is None:
+        return {"data": []}
+
+    actuals = _parse_yield_series(fund)
+    if not actuals:
+        return {"data": []}
+
+    data = [
+        {"time": ts_ms, "actual": round(pct, 3), "predicted": None, "anomaly": False}
+        for ts_ms, pct in actuals
+    ]
     return {"data": data}
 
 

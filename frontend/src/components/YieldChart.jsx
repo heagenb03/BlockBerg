@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react'
+import React, { useState, useRef, useCallback } from 'react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceDot,
@@ -37,14 +37,16 @@ function CustomTooltip({ active, payload, label, fontSize }) {
 
 export function YieldChart({ yieldForecast }) {
   const [activeTickers, setActiveTickers] = useState([LIVE_TICKER])
+  const [tickerDataCache, setTickerDataCache] = useState({})
+  const pendingFetchesRef = useRef(new Set())
   const containerRef = useRef(null)
   const fontSize = usePanelFontSize(containerRef)
   const df = dataFontSize(fontSize)
 
-  const getTickerData = (ticker) => {
+  const getTickerData = useCallback((ticker) => {
     if (ticker === LIVE_TICKER) return yieldForecast?.data ?? mockYieldForecast.data
-    return []
-  }
+    return tickerDataCache[ticker] ?? []
+  }, [yieldForecast, tickerDataCache])
 
   const baseData = activeTickers.reduce((best, t) => {
     const d = getTickerData(t)
@@ -67,7 +69,7 @@ export function YieldChart({ yieldForecast }) {
   const tickersWithData = activeTickers.filter((t) => getTickerData(t).length > 0)
   const hasAnyData = tickersWithData.length > 0
 
-  const handleCommand = (cmd) => {
+  const handleCommand = useCallback((cmd) => {
     const parts = cmd.split(/\s+/)
     const op = parts[0]
     const ticker = parts[1]
@@ -78,18 +80,40 @@ export function YieldChart({ yieldForecast }) {
       if (activeTickers.includes(ticker)) return `${ticker} ALREADY DISPLAYED`
       if (activeTickers.length >= 6) return 'MAX 6 TICKERS'
       setActiveTickers((prev) => [...prev, ticker])
+
+      if (ticker !== LIVE_TICKER) {
+        pendingFetchesRef.current.add(ticker)
+        fetch(`/api/ml/yield-forecast?ticker=${encodeURIComponent(ticker)}`)
+          .then((res) => res.json())
+          .then((result) => {
+            if (!pendingFetchesRef.current.has(ticker)) return  // DEL arrived before fetch finished
+            pendingFetchesRef.current.delete(ticker)
+            setTickerDataCache((prev) => ({ ...prev, [ticker]: result.data ?? [] }))
+          })
+          .catch(() => {
+            pendingFetchesRef.current.delete(ticker)
+            setTickerDataCache((prev) => ({ ...prev, [ticker]: [] }))
+          })
+        return `LOADING ${ticker}...`
+      }
       return `ADDED ${ticker}`
     }
 
     if (op === 'DEL') {
       if (!activeTickers.includes(ticker)) return `${ticker} NOT FOUND`
       if (activeTickers.length === 1) return 'CANNOT REMOVE LAST TICKER'
+      pendingFetchesRef.current.delete(ticker)  // cancel stale fetch guard
       setActiveTickers((prev) => prev.filter((t) => t !== ticker))
+      setTickerDataCache((prev) => {
+        const next = { ...prev }
+        delete next[ticker]
+        return next
+      })
       return `REMOVED ${ticker}`
     }
 
     return `UNKNOWN CMD: ${op}`
-  }
+  }, [activeTickers])
 
   const titleTickers =
     activeTickers.length <= 3

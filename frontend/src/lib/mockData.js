@@ -36,8 +36,6 @@ export const mockYieldForecast = {
 }
 
 export const mockAnomalies = [
-  { timestamp: '2026-03-06T10:45:02Z', type: 'volume_spike',    severity: 'Critical', description: 'Unexpected large withdrawal from MMFXX escrow' },
-  { timestamp: '2026-03-06T10:41:15Z', type: 'forecast_var',    severity: 'Warning',  description: 'High prediction variance detected in yield forecast' },
   { timestamp: '2026-03-06T10:22:04Z', type: 'oracle_update',   severity: 'Info',     description: 'Scheduled XRPL oracle update successful' },
   { timestamp: '2026-03-06T10:05:33Z', type: 'volume_high',     severity: 'Warning',  description: 'Transfer volume exceeds 30-day moving average' },
   { timestamp: '2026-03-06T09:50:11Z', type: 'escrow_create',   severity: 'Info',     description: 'New escrow lock created for 500,000 MMFXX' },
@@ -69,13 +67,13 @@ export const mockEscrow = [
 ]
 
 export const mockEvents = [
-  { id: '1', time: '10:47:30', type: 'SUBSCRIPTION',  amount: '75000',    account: 'rFund...MMF', direction: 'SUB' },
-  { id: '2', time: '10:46:12', type: 'ESCROW_CREATE', amount: '500000',   account: 'rPjU...9Kx',  direction: 'SUB' },
-  { id: '3', time: '10:45:02', type: 'ESCROW_FINISH', amount: '1200000',  account: 'rQZc...5Wt',  direction: 'CLR' },
-  { id: '4', time: '10:44:18', type: 'SUBSCRIPTION',  amount: '10000',    account: 'rFund...MMF', direction: 'SUB' },
-  { id: '5', time: '10:43:01', type: 'REDEMPTION',    amount: '25000',    account: 'rPjU...9Kx',  direction: 'RDM' },
-  { id: '6', time: '10:39:55', type: 'ESCROW_CREATE', amount: '100000',   account: 'rUa2...bNq',  direction: 'SUB' },
-  { id: '7', time: '10:35:10', type: 'TRUST_SET',     amount: '-',        account: 'rHx8...2Xl',  direction: '—'   },
-  { id: '8', time: '10:30:22', type: 'REDEMPTION',    amount: '5500',     account: 'rLb9...3Po',  direction: 'RDM' },
-  { id: '9', time: '10:28:44', type: 'ESCROW_FINISH', amount: '80000',    account: 'rMv7...4Hj',  direction: 'CLR' },
+  { id: '1', time: '2026-03-08T16:47:30Z', type: 'SUBSCRIPTION',  amount: '75000',    account: 'rFund...MMF', direction: 'SUB' },
+  { id: '2', time: '2026-03-08T16:46:12Z', type: 'ESCROW_CREATE', amount: '500000',   account: 'rPjU...9Kx',  direction: 'SUB' },
+  { id: '3', time: '2026-03-08T16:45:02Z', type: 'ESCROW_FINISH', amount: '1200000',  account: 'rQZc...5Wt',  direction: 'CLR' },
+  { id: '4', time: '2026-03-08T16:44:18Z', type: 'SUBSCRIPTION',  amount: '10000',    account: 'rFund...MMF', direction: 'SUB' },
+  { id: '5', time: '2026-03-08T16:43:01Z', type: 'REDEMPTION',    amount: '25000',    account: 'rPjU...9Kx',  direction: 'RDM' },
+  { id: '6', time: '2026-03-08T16:39:55Z', type: 'ESCROW_CREATE', amount: '100000',   account: 'rUa2...bNq',  direction: 'SUB' },
+  { id: '7', time: '2026-03-08T16:35:10Z', type: 'TRUST_SET',     amount: '-',        account: 'rHx8...2Xl',  direction: '—'   },
+  { id: '8', time: '2026-03-08T16:30:22Z', type: 'REDEMPTION',    amount: '5500',     account: 'rLb9...3Po',  direction: 'RDM' },
+  { id: '9', time: '2026-03-08T16:28:44Z', type: 'ESCROW_FINISH', amount: '80000',    account: 'rMv7...4Hj',  direction: 'CLR' },
 ]
