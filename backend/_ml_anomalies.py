@@ -33,6 +33,15 @@ _DEMO_AMOUNT_HI = _DEMO_AMOUNT_BASE * (1 + _DEMO_AMOUNT_JITTER)   # 125_000
 # IsolationForest contamination: ~5% of live events expected to be anomalous
 _CONTAMINATION = 0.05
 
+# Redemption-specific thresholds (mirrors xrpl_client SELL_AMOUNT_RANGE = 25k–100k)
+_RDM_AMOUNT_LO = 25_000
+_RDM_AMOUNT_HI = 100_000
+_RDM_LARGE_THRESHOLD = 150_000 # 1.5x normal ceiling → "Large Redemption"
+
+# Burst detection: 4+ redemptions within a 2-minute window is unusual
+_RDM_BURST_COUNT = 4
+_RDM_BURST_WINDOW_SEC = 120
+
 
 # ---------------------------------------------------------------------------
 # Feature type
@@ -104,6 +113,33 @@ def _fit_model():
     return scaler, model
 
 
+def _build_redemption_baseline(n: int = 300) -> np.ndarray:
+    """Generate synthetic 'normal' redemption features.
+
+    Normal redemptions (xrpl_client SELL_AMOUNT_RANGE):
+        transfer_size  — 25k–100k tokens
+        volume_rate    — 0.3–1.5 tx/min (less frequent than escrow)
+        size_zscore    — drawn from N(0, 0.5) — tighter variance than escrows
+    """
+    rng = np.random.default_rng(99)
+    transfer_sizes = rng.uniform(_RDM_AMOUNT_LO, _RDM_AMOUNT_HI, n)
+    volume_rates   = rng.uniform(0.3, 1.5, n)
+    size_zscores   = rng.normal(0.0, 0.5, n)
+    return np.column_stack([transfer_sizes, volume_rates, size_zscores])
+
+
+def _fit_redemption_model():
+    from sklearn.ensemble import IsolationForest
+    from sklearn.preprocessing import StandardScaler
+
+    baseline = _build_redemption_baseline()
+    scaler = StandardScaler()
+    X = scaler.fit_transform(baseline)
+    model = IsolationForest(contamination=_CONTAMINATION, random_state=99, n_estimators=100)
+    model.fit(X)
+    return scaler, model
+
+
 try:
     _scaler, _model = _fit_model()
     _USE_ISOLATION_FOREST = True
@@ -111,6 +147,13 @@ try:
 except Exception:
     logger.warning("scikit-learn unavailable — falling back to z-score anomaly detection.")
     _USE_ISOLATION_FOREST = False
+
+try:
+    _rdm_scaler, _rdm_model = _fit_redemption_model()
+    _USE_RDM_MODEL = True
+    logger.info("Redemption IsolationForest model fitted on synthetic baseline.")
+except Exception:
+    _USE_RDM_MODEL = False
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +194,92 @@ def _extract_features(events: list[dict]) -> list[EventFeatures]:
 
 
 # ---------------------------------------------------------------------------
-# Classification — TODO(human): implement _classify_event
+# Redemption feature extraction
+# ---------------------------------------------------------------------------
+
+def _extract_redemption_features(
+    events: list[dict],
+) -> tuple[list[EventFeatures], list[dict], list[int]]:
+    """Filter to RDM events and compute features + per-event burst counts.
+
+    Returns (features, rdm_events, burst_counts).
+    burst_counts[i] = number of redemptions within _RDM_BURST_WINDOW_SEC of event i.
+    """
+    rdm_events = [
+        ev for ev in events
+        if ev.get("direction") == "RDM" or ev.get("type") == "REDEMPTION"
+    ]
+    if not rdm_events:
+        return [], [], []
+
+    features = _extract_features(rdm_events)
+
+    # Compute burst proximity using parsed timestamps
+    timestamps_ms = [_event_timestamp_ms(ev, i) for i, ev in enumerate(rdm_events)]
+    window_ms = _RDM_BURST_WINDOW_SEC * 1000
+    burst_counts = [
+        sum(1 for other_ts in timestamps_ms if abs(ts - other_ts) <= window_ms)
+        for ts in timestamps_ms
+    ]
+    return features, rdm_events, burst_counts
+
+
+# ---------------------------------------------------------------------------
+# Classification — TODO(human): implement _classify_redemption
+# ---------------------------------------------------------------------------
+
+def _classify_redemption(
+    amount: float,
+    volume_rate: float,
+    score: float,
+    burst_count: int,
+) -> tuple[str, str, str] | None:
+    """Map redemption anomaly features to (alert_type, severity, description).
+
+    Parameters
+    ----------
+    amount       : redemption token amount
+    volume_rate  : transactions per minute in the current buffer window
+    score        : IsolationForest decision score — more negative = more anomalous
+    burst_count  : number of redemptions within _RDM_BURST_WINDOW_SEC of this event
+
+    Returns
+    -------
+    (alert_type, severity, description) or None if the event is not anomalous.
+        alert_type : "Large Redemption" | "Redemption Burst"
+        severity   : "Critical" | "Warning"
+        description: investor-facing sentence
+
+    Guidance
+    --------
+    - Check `amount` against _RDM_LARGE_THRESHOLD for oversized redemptions
+    - Check `burst_count` >= _RDM_BURST_COUNT for coordinated exit signals
+    - Use `score` to escalate severity (more negative → Critical)
+    - Return None for normal events (no alert)
+
+    TODO(human): implement the classification logic below.
+    """
+    if amount > _RDM_LARGE_THRESHOLD:
+        severity = "Critical" if score < -0.3 or amount > _RDM_LARGE_THRESHOLD * 2 else "Warning"
+        return (
+            "Large Redemption",
+            severity,
+            f"Redemption of {amount:,.0f} tokens is unusually large — "
+            "monitor settlement queue for potential liquidity impact."
+        )
+    elif burst_count >= _RDM_BURST_COUNT:
+        severity = "Critical" if score < -0.3 else "Warning"
+        return (
+            "Redemption Burst",
+            severity,
+            f"{burst_count} redemptions within 2 minutes is unusual — "
+            "possible coordinated exit activity; monitor settlement queue closely."
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Classification — existing general classifier
 # ---------------------------------------------------------------------------
 
 def _classify_event(
@@ -184,22 +312,22 @@ def _classify_event(
     - Description should be investor-facing: what it means, not just the number
     """
     if amount > _DEMO_AMOUNT_HI * 1.5:
-        severity = "Critical" if score < -0.4 else "Warning"
+        severity = "Critical" if score < -0.3 or amount > _DEMO_AMOUNT_HI * 7 else "Warning"
         return (
             "Large Transfer",
             severity,
-            f"Transfer size {amount:,.0f} tokens is unusually large — "
-            "monitor for potential liquidity impact or redemption spikes."
+            f"Transfer of {amount:,.0f} tokens is unusually large — "
+            "monitor settlement queue for potential delays or congestion."
         )
     elif volume_rate > 3.0:
-        severity = "Critical" if score < -0.4 else "Warning"
+        severity = "Critical" if score < -0.3 else "Warning"
         return (
             "Volume Spike",
             severity,
             f"Transaction volume {volume_rate:.1f} tx/min is unusually high — "
             "possible surge in investor activity or market response."
         )
-    elif score < -0.5:
+    elif score < -0.4:
         return (
             "Settlement Anomaly",
             "Warning",
@@ -221,7 +349,6 @@ def _zscore_anomalies(features: list[EventFeatures], events: list[dict]) -> list
     std = max(std, 1.0)
 
     alerts = []
-    now = int(time.time())
     seen_types: set[str] = set()
 
     for i, (feat, ev) in enumerate(zip(features, events)):
@@ -229,7 +356,7 @@ def _zscore_anomalies(features: list[EventFeatures], events: list[dict]) -> list
         if z > 2.5 and "Volume Spike" not in seen_types:
             seen_types.add("Volume Spike")
             alerts.append({
-                "timestamp": (now - i * 60) * 1000,
+                "timestamp": _event_timestamp_ms(ev, i),
                 "type": "Volume Spike",
                 "severity": "Critical" if z > 3.5 else "Warning",
                 "description": (
@@ -249,13 +376,18 @@ def _baseline_alerts() -> list[dict]:
     """A small set of pre-baked historical alerts representing past patterns.
 
     These ensure the AlertFeed is never empty even before live anomalies appear.
-    Timestamps are placed in the past (1–8 hours ago) so they appear below
-    any live detections in the feed.
+    Timestamps are anchored to today's UTC midnight so they are stable across
+    polls and do not trigger the frontend dedup on every cycle.
     """
-    now = int(time.time())
+    import datetime
+    today_midnight = int(datetime.datetime.combine(
+        datetime.datetime.utcnow().date(),
+        datetime.time.min,
+        tzinfo=datetime.timezone.utc,
+    ).timestamp())
     return [
         {
-            "timestamp": (now - 4 * 3600) * 1000,
+            "timestamp": (today_midnight + 19 * 3600) * 1000,  # 19:00 UTC today
             "type": "Settlement Delay",
             "severity": "Warning",
             "description": (
@@ -264,7 +396,16 @@ def _baseline_alerts() -> list[dict]:
             ),
         },
         {
-            "timestamp": (now - 7 * 3600) * 1000,
+            "timestamp": (today_midnight + 14 * 3600) * 1000,  # 14:00 UTC today
+            "type": "Redemption Burst",
+            "severity": "Info",
+            "description": (
+                "4 redemptions within 90s window at 14:00 UTC — "
+                "correlated with Treasury yield announcement; no liquidity impact."
+            ),
+        },
+        {
+            "timestamp": (today_midnight + 16 * 3600) * 1000,  # 16:00 UTC today
             "type": "Low Liquidity Signal",
             "severity": "Info",
             "description": (
@@ -278,6 +419,27 @@ def _baseline_alerts() -> list[dict]:
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
+
+def _event_timestamp_ms(event: dict, fallback_index: int) -> int:
+    """Derive a stable millisecond timestamp from an event's ``time`` field.
+
+    Events carry ``time`` as ``"HH:MM:SS"`` (UTC).  We anchor it to today's
+    UTC date so the value is deterministic across polls for the same event.
+    If parsing fails, fall back to ``now - index * 60s``.
+    """
+    import datetime
+
+    time_str = event.get("time", "")
+    try:
+        parts = time_str.split(":")
+        h, m, s = int(parts[0]), int(parts[1]), int(parts[2])
+        today = datetime.datetime.now(datetime.timezone.utc).date()
+        dt = datetime.datetime(today.year, today.month, today.day, h, m, s,
+                               tzinfo=datetime.timezone.utc)
+        return int(dt.timestamp() * 1000)
+    except Exception:
+        return int((time.time() - fallback_index * 60) * 1000)
+
 
 def get_anomalies() -> list[dict]:
     """Detect anomalies in the live XRPL event buffer.
@@ -295,7 +457,6 @@ def get_anomalies() -> list[dict]:
 
     features = _extract_features(events)
     live_alerts: list[dict] = []
-    now = int(time.time())
 
     if _USE_ISOLATION_FOREST and features:
         X = _scaler.transform(np.array(features))
@@ -321,7 +482,7 @@ def get_anomalies() -> list[dict]:
             seen_types.add(alert_type)
 
             live_alerts.append({
-                "timestamp": (now - i * 60) * 1000,
+                "timestamp": _event_timestamp_ms(events[i], i),
                 "type": alert_type,
                 "severity": severity,
                 "description": description,
@@ -329,5 +490,68 @@ def get_anomalies() -> list[dict]:
 
     elif features:
         live_alerts = _zscore_anomalies(features, events)
+
+    # --- Redemption-specific detection (runs in addition to general model) ---
+    # A large redemption may also appear as "Large Transfer" from the general model;
+    # we allow both since they carry different type strings and provide richer context.
+    rdm_features, rdm_events, burst_counts = _extract_redemption_features(events)
+
+    if _USE_RDM_MODEL and rdm_features:
+        X_rdm = _rdm_scaler.transform(np.array(rdm_features))
+        rdm_scores = _rdm_model.decision_function(X_rdm)
+        rdm_preds = _rdm_model.predict(X_rdm)
+        rdm_seen: set[str] = set()
+
+        for i, (pred, score) in enumerate(zip(rdm_preds, rdm_scores)):
+            if len(live_alerts) >= 8:
+                break
+            # Flag if the model flags anomaly OR burst threshold is met independently
+            is_model_anomaly = pred == -1
+            is_burst = burst_counts[i] >= _RDM_BURST_COUNT
+            if not is_model_anomaly and not is_burst:
+                continue
+            try:
+                result = _classify_redemption(
+                    rdm_features[i].transfer_size,
+                    rdm_features[i].volume_rate,
+                    float(score),
+                    burst_counts[i],
+                )
+            except NotImplementedError:
+                continue
+            except Exception:
+                continue
+            if result is None:
+                continue
+            alert_type, severity, description = result
+            if alert_type in rdm_seen:
+                continue
+            rdm_seen.add(alert_type)
+            live_alerts.append({
+                "timestamp": _event_timestamp_ms(rdm_events[i], i),
+                "type": alert_type,
+                "severity": severity,
+                "description": description,
+            })
+
+    elif rdm_features:
+        # z-score fallback for redemptions when sklearn is unavailable
+        rdm_sizes = np.array([f.transfer_size for f in rdm_features])
+        if len(rdm_sizes) >= 2:
+            mean, std = rdm_sizes.mean(), max(rdm_sizes.std(), 1.0)
+            rdm_seen_fb: set[str] = set()
+            for i, feat in enumerate(rdm_features):
+                z = abs((feat.transfer_size - mean) / std)
+                if z > 2.5 and "Large Redemption" not in rdm_seen_fb:
+                    rdm_seen_fb.add("Large Redemption")
+                    live_alerts.append({
+                        "timestamp": _event_timestamp_ms(rdm_events[i], i),
+                        "type": "Large Redemption",
+                        "severity": "Critical" if z > 3.5 else "Warning",
+                        "description": (
+                            f"Redemption of {feat.transfer_size:,.0f} tokens is "
+                            f"{z:.1f}σ above rolling mean — unusual outflow activity."
+                        ),
+                    })
 
     return live_alerts + _baseline_alerts()
