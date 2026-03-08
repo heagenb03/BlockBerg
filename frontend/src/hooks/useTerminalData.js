@@ -5,6 +5,7 @@ import { mockFunds, mockFund, mockYieldForecast, mockAnomalies, mockRiskScores, 
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 const POLL_INTERVAL = 5000
 const EVENTS_POLL_INTERVAL = 10000
+const MAX_ANOMALY_HISTORY = 100
 
 export function useTerminalData() {
   const [funds, setFunds] = useState(USE_MOCK ? mockFunds : [])
@@ -26,10 +27,11 @@ export function useTerminalData() {
 
     const fetchAll = async () => {
       try {
-        const [fundsRes, fundRes, forecastRes, scoresRes, escrowRes, eventsRes] = await Promise.all([
+        const [fundsRes, fundRes, forecastRes, anomaliesRes, scoresRes, escrowRes, eventsRes] = await Promise.all([
           axios.get('/api/funds'),
           axios.get('/api/xrpl/fund'),
           axios.get('/api/ml/yield-forecast'),
+          axios.get('/api/ml/anomalies'),
           axios.get('/api/ml/risk-scores'),
           axios.get('/api/xrpl/escrow'),
           axios.get('/api/xrpl/events'),
@@ -37,6 +39,7 @@ export function useTerminalData() {
         setFunds(fundsRes.data)
         setFund(fundRes.data)
         setYieldForecast(forecastRes.data)
+        setAnomalies(anomaliesRes.data)
         setRiskScores(scoresRes.data)
         setEscrow(escrowRes.data)
         setEvents(eventsRes.data)
@@ -54,7 +57,12 @@ export function useTerminalData() {
     const anomalyInterval = setInterval(async () => {
       try {
         const res = await axios.get('/api/ml/anomalies')
-        setAnomalies(res.data)
+        setAnomalies(prev => {
+          const existingDescs = new Set(prev.map(a => a.description))
+          const incoming = res.data.filter(a => !existingDescs.has(a.description))
+          if (incoming.length === 0) return prev
+          return [...incoming, ...prev].slice(0, MAX_ANOMALY_HISTORY)
+        })
       } catch {}
     }, POLL_INTERVAL)
 
