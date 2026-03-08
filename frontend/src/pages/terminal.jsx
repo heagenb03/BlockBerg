@@ -19,7 +19,7 @@ import {
   parseCommand,
 } from '../lib/panelSlots.js'
 
-const STORAGE_KEY = 'mmf-terminal-slots'
+const STORAGE_KEY = 'mmf-terminal-slots-v2'
 
 function loadSlots() {
   try {
@@ -85,7 +85,7 @@ export default function Terminal() {
 
     if (action === 'ADD') {
       if (dynamicSlots.length >= MAX_DYNAMIC_SLOTS) {
-        return { msg: 'MAX 4 PANELS — DEL ONE FIRST', ok: false }
+        return { msg: 'MAX 6 PANELS — DEL ONE FIRST', ok: false }
       }
       const newSlot =
         type === 'RISK'
@@ -126,20 +126,21 @@ export default function Terminal() {
     return { msg: 'UNKNOWN ERROR', ok: false }
   }
 
-  // Layout: top row = [MON, YF, dynamicSlots[0]]
-  //         bottom row = [dynamicSlots[1], dynamicSlots[2], dynamicSlots[3]]
-  const slot0 = dynamicSlots[0] ?? null
-  const bottomSlots = dynamicSlots.slice(1)
+  // Layout: top row    = [MON, YF, dynamicSlots[0], dynamicSlots[1]]
+  //         bottom row = [dynamicSlots[2], dynamicSlots[3], dynamicSlots[4], dynamicSlots[5]]
+  const topDynamic = dynamicSlots.slice(0, 2)
+  const bottomSlots = dynamicSlots.slice(2)
   const hasBottom = bottomSlots.length > 0
 
-  const topTypes = ['MONITOR', 'YIELD', ...(slot0 ? [slot0.type] : [])]
+  const TOP_FIXED_COUNT = 2 // MON + YF
+  const topTypes = ['MONITOR', 'YIELD', ...topDynamic.map(s => s.type)]
   const topSizes = computeRowSizes(topTypes)
 
   const bottomTypes = bottomSlots.map(s => s.type)
   const bottomSizes = computeRowSizes(bottomTypes)
 
   // Keys force PanelGroup remount so defaultSizes apply after slot changes
-  const topKey = `top-${slot0?.id ?? 'none'}`
+  const topKey = `top-${topDynamic.map(s => s.id).join('-')}`
   const bottomKey = `bottom-${bottomSlots.map(s => s.id).join('-')}`
   const vertKey = `vert-${hasBottom}`
 
@@ -176,7 +177,7 @@ export default function Terminal() {
       <main className={`flex-1 overflow-hidden p-1 gap-1${loading ? ' hidden' : ''}`}>
         <PanelGroup key={vertKey} direction="vertical" className="h-full w-full" style={{ gap: '4px' }}>
 
-          {/* Top row — MON + YF always present, plus dynamic slot 0 */}
+          {/* Top row — MON + YF always present, plus dynamic slots 0–1 */}
           <Panel defaultSize={hasBottom ? 55 : 100} minSize={30}>
             <PanelGroup key={topKey} direction="horizontal" className="h-full" style={{ gap: '4px' }}>
 
@@ -190,19 +191,19 @@ export default function Terminal() {
                 <YieldChart yieldForecast={yieldForecast} />
               </Panel>
 
-              {slot0 && (
-                <>
+              {topDynamic.map((slot, idx) => (
+                <React.Fragment key={slot.id}>
                   <ResizeHandle />
-                  <Panel defaultSize={topSizes[2]} minSize={15}>
+                  <Panel defaultSize={topSizes[TOP_FIXED_COUNT + idx]} minSize={15}>
                     <SlotContent
-                      slot={slot0}
+                      slot={slot}
                       data={panelData}
-                      onTickerChange={(t) => handleSlotTickerChange(slot0.id, t)}
-                      onTickersChange={(ts) => handleSlotTickersChange(slot0.id, ts)}
+                      onTickerChange={(t) => handleSlotTickerChange(slot.id, t)}
+                      onTickersChange={(ts) => handleSlotTickersChange(slot.id, ts)}
                     />
                   </Panel>
-                </>
-              )}
+                </React.Fragment>
+              ))}
 
             </PanelGroup>
           </Panel>

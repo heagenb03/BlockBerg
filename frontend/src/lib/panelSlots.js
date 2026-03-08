@@ -14,15 +14,17 @@ export const PANEL_LABELS = {
 
 export const PROTECTED_ALIASES = new Set(['MON', 'MONITOR', 'YF', 'YIELD', 'YC'])
 
-export const MAX_DYNAMIC_SLOTS = 4
+export const MAX_DYNAMIC_SLOTS = 6
 
 export const HELP_TEXT = 'ADD/DEL <ES|AF|EV|RG> <TICKER> · MON & YF are permanent'
 
+// Top row:    MON | YF | slot[0] | slot[1]
+// Bottom row: slot[2] | ... | slot[5]  (0–4 panels, hidden if empty)
 export const DEFAULT_DYNAMIC_SLOTS = [
-  { id: 'default-0', type: 'ESCROW', ticker: 'MMFXX' },
-  { id: 'default-1', type: 'ALERT',  ticker: 'MMFXX' },
+  { id: 'default-0', type: 'ALERT',  ticker: 'MMFXX' },
+  { id: 'default-1', type: 'RISK',   ticker: 'MMFXX', tickers: ['MMFXX'] },
   { id: 'default-2', type: 'EVENTS', ticker: 'MMFXX' },
-  { id: 'default-3', type: 'RISK',   ticker: 'MMFXX', tickers: ['MMFXX'] },
+  { id: 'default-3', type: 'ESCROW', ticker: 'MMFXX' },
 ]
 
 let _idSeq = 0
