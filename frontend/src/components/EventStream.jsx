@@ -129,20 +129,6 @@ export function EventStream({ selectedTicker, events, wsConnected, onTickerChang
             {localTicker}{' '}
             <span style={panelSubtitleStyle(fontSize)}>STREAM</span>
           </h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: fontSize * 0.5, fontFamily: 'monospace', fontSize: chStyle.fontSize }}>
-            <span style={{ display: 'flex', alignItems: 'center', gap: fontSize * 0.35 }}>
-              <span style={{
-                width: fontSize * 0.55,
-                height: fontSize * 0.55,
-                borderRadius: '50%',
-                backgroundColor: wsConnected ? COLOR_GREEN : '#FF5252',
-                flexShrink: 0,
-              }} />
-              <span style={{ color: wsConnected ? COLOR_GREEN : '#FF5252' }}>
-                {wsConnected ? 'LIVE' : 'OFFLINE'}
-              </span>
-            </span>
-          </div>
         </div>
         <PanelCommandLine onCommand={handleCommand} placeholder="GO MMFXX" />
       </div>
