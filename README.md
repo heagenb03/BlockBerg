@@ -1,4 +1,4 @@
-# XRPLBlerg
+# BlockBlerg
 
 **Bloomberg Terminal 4 Tokenized MMF** — Midwest Blockathon '26
 
@@ -9,7 +9,7 @@ A terminal-style dashboard for tokenized money market funds (MMFs) and real-worl
 ## Project structure
 
 ```
-XRPLBlerg/
+BLockBlerg/
 ├── frontend/          # React + Vite terminal UI (see frontend/README.md)
 ├── backend/            # FastAPI + XRPL + ML (see backend/README.md)
 ├── data/               # Optional CSV time-series (RWA/token data)
